@@ -1,14 +1,12 @@
+import { Tetris } from '../components/Tetris';
 import Layout from '../components/Layout';
-import { Snake } from '@/components/Snake';
 
-export default function Home() {
-
-
+export default function TetrisPage() {
   return (
     <Layout>
       <div className="flex flex-col items-center justify-center min-h-screen py-2">
-        <h1 className="text-4xl font-bold mb-8">Snake Game</h1>
-        <Snake />
+        <h1 className="text-4xl font-bold mb-8">Tetris</h1>
+        <Tetris />
       </div>
     </Layout>
   );
