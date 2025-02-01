@@ -14,7 +14,8 @@ export const LogEntryComponent: React.FC<{ log: LogEntryType; use24Hour?: boolea
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: !use24Hour
+      hour12: !use24Hour,
+      timeZone: 'America/New_York'
     });
   };
 
