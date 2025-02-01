@@ -28,7 +28,7 @@ exports[`LogEntryComponent snapshot tests matches snapshot with 12-hour format 1
         <div
           class="flex items-center text-gray-500 text-sm mb-2"
         >
-          2/20/2024, 10:00:00 AM
+          2/20/2024, 03:00:00 PM
         </div>
       </div>
     </div>
@@ -64,7 +64,7 @@ exports[`LogEntryComponent snapshot tests matches snapshot with 24-hour format 1
         <div
           class="flex items-center text-gray-500 text-sm mb-2"
         >
-          20/02/2024, 10:00:00
+          20/02/2024, 15:00:00
         </div>
       </div>
     </div>

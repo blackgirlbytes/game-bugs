@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { LogEntryComponent } from './LogEntry';
-import { LogEntry } from '../../store/gameStore';
+import { LogEntryComponent } from '../../src/components/logs/LogEntry';
+import { LogEntry } from '../../src/store/gameStore';
 
 // Mock the Lucide icons
 jest.mock('lucide-react', () => ({
@@ -10,11 +10,11 @@ jest.mock('lucide-react', () => ({
 }));
 
 // Mock the sub-components
-jest.mock('./LogIcon', () => ({
+jest.mock('../../src/components/logs/LogIcon', () => ({
   LogIcon: () => null
 }));
 
-jest.mock('./SeverityBadge', () => ({
+jest.mock('../../src/components/logs/SeverityBadge', () => ({
   SeverityBadge: () => null
 }));
 

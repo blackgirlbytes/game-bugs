@@ -1,5 +1,5 @@
-import { prepareErrorDistribution } from './logUtils';
-import { LogEntry } from '../store/gameStore';
+import { prepareErrorDistribution } from '../../src/utils/logUtils';
+import { LogEntry } from '../../src/store/gameStore';
 
 describe('prepareErrorDistribution', () => {
   describe('snapshot tests', () => {

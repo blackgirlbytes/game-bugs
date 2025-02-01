@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { LogDashboard } from './LogDashboard'
+import { LogDashboard } from '../../src/components/LogDashboard'
 
 // Mock the Lucide icons
 jest.mock('lucide-react', () => ({
@@ -8,7 +8,7 @@ jest.mock('lucide-react', () => ({
 }))
 
 // Mock the store
-jest.mock('../store/gameStore', () => ({
+jest.mock('../../src/store/gameStore', () => ({
   useGameStore: () => ({
     logs: [],
     clearLogs: jest.fn(),
@@ -27,19 +27,19 @@ jest.mock('../store/gameStore', () => ({
 }))
 
 // Mock the chart components
-jest.mock('./logs/TimeSeriesChart', () => ({
+jest.mock('../../src/components/logs/TimeSeriesChart', () => ({
   TimeSeriesChart: () => null
 }))
 
-jest.mock('./logs/ErrorDistributionChart', () => ({
+jest.mock('../../src/components/logs/ErrorDistributionChart', () => ({
   ErrorDistributionChart: () => null
 }))
 
-jest.mock('./logs/LogFilters', () => ({
+jest.mock('../../src/components/logs/LogFilters', () => ({
   LogFilters: () => null
 }))
 
-jest.mock('./logs/LogEntry', () => ({
+jest.mock('../../src/components/logs/LogEntry', () => ({
   LogEntryComponent: () => null
 }))
 

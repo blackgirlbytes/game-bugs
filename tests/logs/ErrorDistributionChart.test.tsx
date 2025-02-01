@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { ErrorDistributionChart } from './ErrorDistributionChart';
-import { LogEntry } from '../../store/gameStore';
+import { ErrorDistributionChart } from '../../src/components/logs/ErrorDistributionChart';
+import { LogEntry } from '../../src/store/gameStore';
 
 // Mock Recharts components
 jest.mock('recharts', () => ({
