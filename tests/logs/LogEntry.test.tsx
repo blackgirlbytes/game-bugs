@@ -57,7 +57,7 @@ describe('LogEntryComponent', () => {
       render(<LogEntryComponent log={mockLog} use24Hour={false} />);
 
       // Get the UTC time string
-      const utcTimeString = testDate.toUTCString(); // "Wed, 20 Feb 2024 15:00:00 GMT"
+      const utcTimeString = testDate.toUTCString();
 
       // Get the local 12-hour format time as it should appear
       const expectedTime = testDate.toLocaleString('en-US', {
@@ -67,7 +67,8 @@ describe('LogEntryComponent', () => {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: true
+        hour12: true,
+        timeZone: 'America/New_York'
       });
 
       // Find the time element
@@ -102,7 +103,8 @@ describe('LogEntryComponent', () => {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: false
+        hour12: false,
+        timeZone: 'America/New_York'
       });
 
       // Find the time element
