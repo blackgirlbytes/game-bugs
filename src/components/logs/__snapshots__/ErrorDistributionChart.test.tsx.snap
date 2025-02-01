@@ -1,0 +1,129 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`ErrorDistributionChart snapshot tests matches snapshot with empty logs 1`] = `
+<div>
+  <div
+    class="bg-white p-4 rounded-lg shadow"
+  >
+    <h2
+      class="text-lg font-semibold mb-4"
+    >
+      Top Error Categories
+    </h2>
+    <div
+      class="h-[300px]"
+    >
+      <div>
+        <div>
+          <div
+            data-testid="pie"
+          />
+          <div
+            data-testid="tooltip"
+          >
+            collision
+            : 
+            2 errors
+          </div>
+          <div
+            data-testid="legend"
+          >
+            collision
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`ErrorDistributionChart snapshot tests matches snapshot with multiple categories 1`] = `
+<div>
+  <div
+    class="bg-white p-4 rounded-lg shadow"
+  >
+    <h2
+      class="text-lg font-semibold mb-4"
+    >
+      Top Error Categories
+    </h2>
+    <div
+      class="h-[300px]"
+    >
+      <div>
+        <div>
+          <div
+            data-testid="pie"
+          >
+            <div
+              data-testid="pie-label"
+            >
+              collision (50%)
+            </div>
+            <div
+              data-testid="pie-label"
+            >
+              network (50%)
+            </div>
+          </div>
+          <div
+            data-testid="tooltip"
+          >
+            collision
+            : 
+            2 errors
+          </div>
+          <div
+            data-testid="legend"
+          >
+            collision
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`ErrorDistributionChart snapshot tests matches snapshot with single category 1`] = `
+<div>
+  <div
+    class="bg-white p-4 rounded-lg shadow"
+  >
+    <h2
+      class="text-lg font-semibold mb-4"
+    >
+      Top Error Categories
+    </h2>
+    <div
+      class="h-[300px]"
+    >
+      <div>
+        <div>
+          <div
+            data-testid="pie"
+          >
+            <div
+              data-testid="pie-label"
+            >
+              collision (100%)
+            </div>
+          </div>
+          <div
+            data-testid="tooltip"
+          >
+            collision
+            : 
+            2 errors
+          </div>
+          <div
+            data-testid="legend"
+          >
+            collision
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;

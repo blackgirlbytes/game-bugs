@@ -1,0 +1,73 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`LogEntryComponent snapshot tests matches snapshot with 12-hour format 1`] = `
+<div>
+  <div
+    class="p-4 bg-white rounded-lg shadow border border-gray-200"
+  >
+    <div
+      class="flex items-start gap-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <div
+          class="flex items-center gap-2 mb-2"
+        >
+          <h3
+            class="font-medium"
+          >
+            Test message
+          </h3>
+          <span
+            class="text-sm text-gray-500"
+          >
+            test
+          </span>
+        </div>
+        <div
+          class="flex items-center text-gray-500 text-sm mb-2"
+        >
+          2/20/2024, 10:00:00 AM
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`LogEntryComponent snapshot tests matches snapshot with 24-hour format 1`] = `
+<div>
+  <div
+    class="p-4 bg-white rounded-lg shadow border border-gray-200"
+  >
+    <div
+      class="flex items-start gap-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <div
+          class="flex items-center gap-2 mb-2"
+        >
+          <h3
+            class="font-medium"
+          >
+            Test message
+          </h3>
+          <span
+            class="text-sm text-gray-500"
+          >
+            test
+          </span>
+        </div>
+        <div
+          class="flex items-center text-gray-500 text-sm mb-2"
+        >
+          20/02/2024, 10:00:00
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+`;

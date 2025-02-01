@@ -2,6 +2,26 @@ import { prepareErrorDistribution } from './logUtils';
 import { LogEntry } from '../store/gameStore';
 
 describe('prepareErrorDistribution', () => {
+  describe('snapshot tests', () => {
+    it('matches data snapshot for multiple categories', () => {
+      const logs: LogEntry[] = [
+        createMockLog('database'),
+        createMockLog('database'),
+        createMockLog('network'),
+        createMockLog('validation'),
+        createMockLog('validation'),
+        createMockLog('validation'),
+      ];
+      const result = prepareErrorDistribution(logs);
+      expect(result).toMatchSnapshot();
+    });
+
+    it('matches data snapshot for empty logs', () => {
+      const result = prepareErrorDistribution([]);
+      expect(result).toMatchSnapshot();
+    });
+  });
+
   // Helper to create mock logs
   const createMockLog = (category: string, type: 'error' = 'error'): LogEntry => ({
     id: Math.random().toString(),

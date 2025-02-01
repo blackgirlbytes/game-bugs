@@ -44,6 +44,13 @@ jest.mock('./logs/LogEntry', () => ({
 }))
 
 describe('LogDashboard', () => {
+  describe('snapshot tests', () => {
+    it('matches snapshot with default state', () => {
+      const { container } = render(<LogDashboard />);
+      expect(container).toMatchSnapshot();
+    });
+  });
+
   it('renders the dashboard title', () => {
     render(<LogDashboard />)
     

@@ -41,6 +41,28 @@ jest.mock('recharts', () => ({
 }));
 
 describe('ErrorDistributionChart', () => {
+  describe('snapshot tests', () => {
+    it('matches snapshot with single category', () => {
+      const logs = createMockLog('collision', 2);
+      const { container } = render(<ErrorDistributionChart logs={logs} />);
+      expect(container).toMatchSnapshot();
+    });
+
+    it('matches snapshot with multiple categories', () => {
+      const logs = [
+        ...createMockLog('collision', 2),
+        ...createMockLog('network', 2)
+      ];
+      const { container } = render(<ErrorDistributionChart logs={logs} />);
+      expect(container).toMatchSnapshot();
+    });
+
+    it('matches snapshot with empty logs', () => {
+      const { container } = render(<ErrorDistributionChart logs={[]} />);
+      expect(container).toMatchSnapshot();
+    });
+  });
+
   const createMockLog = (category: string, count: number = 1): LogEntry[] => 
     Array.from({ length: count }, () => ({
       id: Math.random().toString(),

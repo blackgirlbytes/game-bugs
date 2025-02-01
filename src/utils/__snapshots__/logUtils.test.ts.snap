@@ -1,0 +1,20 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`prepareErrorDistribution snapshot tests matches data snapshot for empty logs 1`] = `[]`;
+
+exports[`prepareErrorDistribution snapshot tests matches data snapshot for multiple categories 1`] = `
+[
+  {
+    "category": "validation",
+    "count": 3,
+  },
+  {
+    "category": "database",
+    "count": 2,
+  },
+  {
+    "category": "network",
+    "count": 1,
+  },
+]
+`;
