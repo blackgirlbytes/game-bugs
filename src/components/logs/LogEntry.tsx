@@ -4,7 +4,20 @@ import { LogEntry as LogEntryType } from '../../store/gameStore';
 import { LogIcon } from './LogIcon';
 import { SeverityBadge } from './SeverityBadge';
 
-export const LogEntryComponent: React.FC<{ log: LogEntryType }> = ({ log }) => {
+export const LogEntryComponent: React.FC<{ log: LogEntryType; use24Hour?: boolean }> = ({ log, use24Hour = false }) => {
+  const formatTimestamp = (timestamp: number) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString(use24Hour ? 'en-GB' : 'en-US', {
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: !use24Hour
+    });
+  };
+
   return (
     <div className="p-4 bg-white rounded-lg shadow border border-gray-200">
       <div className="flex items-start gap-4">
@@ -20,7 +33,7 @@ export const LogEntryComponent: React.FC<{ log: LogEntryType }> = ({ log }) => {
           </div>
           <div className="flex items-center text-gray-500 text-sm mb-2">
             <Clock className="w-4 h-4 mr-1" />
-            {new Date(log.timestamp).toLocaleString()}
+            {formatTimestamp(log.timestamp)}
           </div>
           {log.gameState && (
             <div className="mb-2 text-sm text-gray-600">
@@ -41,4 +54,4 @@ export const LogEntryComponent: React.FC<{ log: LogEntryType }> = ({ log }) => {
       </div>
     </div>
   );
-}; 
+};
