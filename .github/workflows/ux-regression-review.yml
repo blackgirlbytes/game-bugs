@@ -3,15 +3,6 @@ name: UX Regression Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - 'src/components/LogDashboard/**'
-      - 'src/components/LogEntry/**'
-      - 'src/components/ErrorDistributionChart/**'
-      - '**/*.test.tsx'
-      - '**/__snapshots__/**'
-      - '**/*.css'
-      - '**/*.scss'
-      - '**/theme/**'
 
 permissions:
   contents: read
