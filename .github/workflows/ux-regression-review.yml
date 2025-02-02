@@ -1,0 +1,260 @@
+name: UX Regression Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/components/LogDashboard/**'
+      - 'src/components/LogEntry/**'
+      - 'src/components/ErrorDistributionChart/**'
+      - '**/*.test.tsx'
+      - '**/__snapshots__/**'
+      - '**/*.css'
+      - '**/*.scss'
+      - '**/theme/**'
+
+permissions:
+  contents: read
+  pull-requests: write  # Need write permission to create suggestions
+  issues: read
+
+jobs:
+  test-and-review:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR files and changes
+        id: pr-files
+        run: |
+          # Get changed files
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+
+          if [ -z "$FILES" ]; then
+            echo "Error: Failed to fetch or parse PR files."
+            exit 1
+          fi
+
+          # Get related component changes
+          STYLE_CHANGES=$(echo $FILES | jq -r '.[] | select(endswith(".css") or endswith(".scss") or contains("theme"))')
+          SNAPSHOT_CHANGES=$(echo $FILES | jq -r '.[] | select(contains("__snapshots__"))')
+          COMPONENT_CHANGES=$(echo $FILES | jq -r '.[] | select(endswith(".tsx") or endswith(".jsx"))')
+
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "style-changes=$STYLE_CHANGES" >> $GITHUB_OUTPUT
+          echo "snapshot-changes=$SNAPSHOT_CHANGES" >> $GITHUB_OUTPUT
+          echo "component-changes=$COMPONENT_CHANGES" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm install
+        
+      - name: Run tests and capture results
+        id: test-run
+        run: |
+          # Run tests and save output, don't fail on test failures
+          npm test -- --json --outputFile=test-results.json || true
+          
+          # Check if there were any failures and set output
+          TEST_STATUS=$(cat test-results.json | jq -r '.success')
+          echo "test-status=$TEST_STATUS" >> $GITHUB_OUTPUT
+          
+          # Save test results for Devin to analyze
+          TEST_OUTPUT=$(cat test-results.json | jq -c .)
+          echo "test-output=$TEST_OUTPUT" >> $GITHUB_OUTPUT
+
+          # Analyze test failures for patterns
+          FAILED_TESTS=$(cat test-results.json | jq -r '.testResults[].assertionResults[] | select(.status=="failed")')
+          SNAPSHOT_FAILURES=$(echo "$FAILED_TESTS" | jq -r 'select(.title | contains("snapshot"))')
+          echo "snapshot-failures=$SNAPSHOT_FAILURES" >> $GITHUB_OUTPUT
+
+      - name: Create Devin Review Session
+        id: devin-review
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          TEST_STATUS: ${{ steps.test-run.outputs.test-status }}
+          TEST_OUTPUT: ${{ steps.test-run.outputs.test-output }}
+          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          STYLE_CHANGES: ${{ steps.pr-files.outputs.style-changes }}
+          SNAPSHOT_CHANGES: ${{ steps.pr-files.outputs.snapshot-changes }}
+          COMPONENT_CHANGES: ${{ steps.pr-files.outputs.component-changes }}
+          SNAPSHOT_FAILURES: ${{ steps.test-run.outputs.snapshot-failures }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+          REVIEW_PROMPT: |
+            You are UX Regression Reviewer Devin with a focus on snapshot test failures and UI regressions. Your tasks:
+
+            1. Clone the repository ${{ github.repository }} locally.
+            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
+            3. Review the changed files in this PR:
+               ${{ steps.pr-files.outputs.files }}
+
+            4. Analyze Component Relationships and Changes:
+               Style Changes: ${{ steps.pr-files.outputs.style-changes }}
+               Snapshot Changes: ${{ steps.pr-files.outputs.snapshot-changes }}
+               Component Changes: ${{ steps.pr-files.outputs.component-changes }}
+
+               Look for:
+               a) Corresponding style changes for component updates
+               b) Related components changing together
+               c) Consistent patterns across similar components
+               d) Theme or design system updates
+
+            5. Analyze Test Results Pattern Recognition:
+               Test Status: ${{ steps.test-run.outputs.test-status }}
+               Snapshot Failures: ${{ steps.test-run.outputs.snapshot-failures }}
+
+               Categorize changes as likely intentional when you see:
+               - New UI elements consistently added across components
+               - Systematic class name updates
+               - Addition of accessibility attributes
+               - Style system updates (colors, spacing, typography)
+               - Related components updated similarly
+               - Corresponding style file changes
+               
+               Categorize changes as likely regressions when you see:
+               - Missing UI elements
+               - Inconsistent styling between similar components
+               - Layout breaking changes
+               - Loss of functionality
+               - Single component differing from related ones
+               - No corresponding style changes
+
+            6. For each identified regression:
+               a) Create a suggestion comment using the GitHub suggestion syntax
+               b) Include explanation of why the change is needed
+               c) Reference related components showing correct implementation
+
+            Comment Format Guidelines:
+
+            1. For Component Fixes:
+               ```
+               This component is missing the standard error styling pattern:
+               ```suggestion
+               return (
+                 <div className="error-message">
+                   <ErrorIcon />
+                   {error}
+                 </div>
+               )
+               ```
+               This matches the error handling pattern used in:
+               - LogDashboard.tsx (line 45)
+               - ErrorDistributionChart.tsx (line 23)
+               ```
+
+            2. For Style Fixes:
+               ```
+               Missing error message styling:
+               ```suggestion
+               .error-message {
+                 color: var(--error-color);
+                 padding: var(--space-sm);
+                 border: 1px solid var(--error-border);
+               }
+               ```
+               These are the standard error styles used across the logging components.
+               ```
+
+            3. For Snapshot Updates:
+               ```
+               Snapshot test failure analysis:
+               - Component: LogEntry
+               - File: src/components/__tests__/__snapshots__/LogEntry.test.tsx.snap
+               - Issue: Missing error styling classes
+               
+               This appears to be a regression. The snapshot shows the error component
+               is missing standard error styling used in other components. See suggested
+               fix above for the component code.
+               ```
+
+            4. For Multiple Related Issues:
+               ```
+               Multiple styling inconsistencies found:
+               
+               1. LogEntry.tsx:
+               ```suggestion
+               className="error-message"
+               ```
+               2. ErrorDisplay.tsx:
+               ```suggestion
+               className="error-message error-display"
+               ```
+               
+               These components should follow the standard error styling pattern
+               used in LogDashboard and ErrorDistributionChart.
+               ```
+
+            Rules for Suggestions:
+            1. Always use ```suggestion blocks for code changes
+            2. Include before/after context lines for clarity
+            3. Explain why the change is needed
+            4. Reference other components that show the correct pattern
+            5. Group related suggestions in a single comment when possible
+            6. Include specific line numbers and file paths
+            7. For style changes, reference design system variables
+            8. For component changes, maintain consistent patterns
+
+            Rules and Guidelines:
+            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review and comment
+            2. Focus specifically on visual and UX related issues
+            3. For snapshot failures, include both the expected and received output in your comments
+            4. Use inline feedback with specific line references where possible
+            5. Include code snippets in markdown format when discussing fixes
+            6. If multiple similar issues exist, consolidate feedback into a single comprehensive comment
+            7. Never ask for user confirmation or wait for messages
+
+            How to post comments with code embedded:
+            Use the gh api command with suggestion blocks:
+            
+            gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+            -f body='Regression found:
+            ```suggestion
+            return <div className="error-message">{error}</div>
+            ```
+            This component should use the standard error styling pattern.' \
+            -f commit_id='$COMMIT_SHA' \
+            -f path='src/components/LogEntry.tsx' \
+            -f line=5
+
+        run: |
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+
+          # Check for errors in the response
+          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
+          if [ "$ERROR_MSG" != "null" ]; then
+            echo "Error creating Devin session: $ERROR_MSG"
+            exit 1
+          fi
+
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+
+          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
+            echo "Error: Devin session details are missing from the response."
+            exit 1
+          fi
+
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+          echo "Devin session created successfully: $RESPONSE"
