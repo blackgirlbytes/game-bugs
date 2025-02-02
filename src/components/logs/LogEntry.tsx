@@ -47,7 +47,7 @@ export const LogEntryComponent: React.FC<{ log: LogEntryType; use24Hour?: boolea
             </pre>
           )}
           {log.stack && (
-            <div className="mt-2 p-2 bg-red-50 rounded text-sm overflow-x-auto font-mono">
+            <div className="mt-2 p-2 rounded text-sm overflow-x-auto font-mono">
               {log.stack}
             </div>
           )}
