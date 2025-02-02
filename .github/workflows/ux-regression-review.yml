@@ -2,12 +2,11 @@ name: UX Regression Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize]
 
 permissions:
-  contents: read
   pull-requests: write
-  issues: read
+  contents: read
 
 jobs:
   test-and-review:
@@ -18,21 +17,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Get PR files and changes
-        id: pr-files
-        run: |
-          # Get changed files with patch data
-          FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
-            jq -r '[.[] | {filename: .filename, patch: .patch}] | @json')
-
-          if [ -z "$FILES" ]; then
-            echo "Error: Failed to fetch or parse PR files."
-            exit 1
-          fi
-
-          echo "files=$FILES" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
@@ -62,69 +46,26 @@ jobs:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           TEST_STATUS: ${{ steps.test-run.outputs.test-status }}
           TEST_OUTPUT: ${{ steps.test-run.outputs.test-output }}
-          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
           REVIEW_PROMPT: |
             You are UX Regression Reviewer Devin. Your behavior depends on whether you find regressions or not:
 
             IF NO REGRESSIONS FOUND:
-            1. Create a general PR review comment using:
-               ```bash
-               gh pr comment ${{ github.event.pull_request.number }} --body "# UI Review Summary ✅
-               
-               ## Test Results
-               - All snapshot tests passing
-               - Component styling consistent with patterns
-               - No visual regressions detected
-               
-               ## Analyzed Components
-               [List components you checked]
-               
-               Great work maintaining UI consistency!"
-               ```
+            Return a JSON response in this format:
+            {
+              "hasRegressions": false,
+              "comment": "# UI Review Summary ✅\n\n## Test Results\n- All snapshot tests passing\n- Component styling consistent with patterns\n- No visual regressions detected\n\n## Analyzed Components\n[List components you checked]\n\nGreat work maintaining UI consistency!"
+            }
 
             IF REGRESSIONS FOUND:
-            1. DO NOT create a general review comment
-            2. Instead, create a single inline suggestion comment exactly where the regression is using:
-               ```bash
-               gh api \
-               --method POST \
-               -H "Accept: application/vnd.github+json" \
-               /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-               -f body='```suggestion
-               [exact line of code that should be here]
-               ```
-               [Brief explanation of why this change is needed and what pattern it is restoring]' \
-               -f commit_id='$COMMIT_SHA' \
-               -f path='path/to/file.tsx' \
-               -f line=LINE_NUMBER
-               ```
-
-            Example of correct regression suggestion:
-            ```bash
-            gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
-            -f body='```suggestion
-                        <div className="mt-2 p-2 bg-red-50 rounded text-sm overflow-x-auto font-mono">
-            ```
-            Restoring error background styling that matches our logging component pattern.' \
-            -f commit_id='abc123' \
-            -f path='src/components/LogEntry.tsx' \
-            -f line=50
-            ```
-
-            Rules for Regression Fixes:
-            1. One suggestion per regression
-            2. Comment directly on the line needing fixing
-            3. Use exact suggestion syntax for committable changes
-            4. Keep explanation focused on the specific regression
-            5. Reference the established pattern being restored
-
-            Changed Files:
-            ${{ steps.pr-files.outputs.files }}
+            Return a JSON response in this format:
+            {
+              "hasRegressions": true,
+              "filePath": "src/components/logs/LogEntry.tsx",  // Path to file with regression
+              "line": 50,  // Line number where fix is needed
+              "suggestion": "<div className=\"mt-2 p-2 bg-red-50 rounded text-sm overflow-x-auto font-mono\">",  // The exact code that should be there
+              "explanation": "Restoring error background styling that matches our logging component pattern."  // Brief explanation
+            }
 
             Test Results:
             Status: ${{ steps.test-run.outputs.test-status }}
@@ -140,34 +81,34 @@ jobs:
             -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
 
-          # Check for errors in the response
-          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
-          if [ "$ERROR_MSG" != "null" ]; then
-            echo "Error creating Devin session: $ERROR_MSG"
-            exit 1
-          fi
+          # Parse Devin's response and save it
+          DEVIN_ANALYSIS=$(echo "$RESPONSE" | jq -r '.message')
+          echo "devin-analysis=$DEVIN_ANALYSIS" >> $GITHUB_OUTPUT
 
-          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
-          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
-
-          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
-            echo "Error: Devin session details are missing from the response."
-            exit 1
-          fi
-
-          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
-          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $RESPONSE"
-
-          # Install GitHub CLI
-          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-          && sudo apt update \
-          && sudo apt install gh -y
-
-          # Configure GitHub CLI
-          echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
-          gh auth login --with-token < token.txt
-          rm token.txt
+      - name: Process Devin's Review
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const devinAnalysis = JSON.parse('${{ steps.devin-review.outputs.devin-analysis }}');
+            
+            if (devinAnalysis.hasRegressions) {
+              // Create a suggestion comment for the regression
+              await github.rest.pulls.createReviewComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.payload.pull_request.number,
+                commit_id: context.payload.pull_request.head.sha,
+                path: devinAnalysis.filePath,
+                line: devinAnalysis.line,
+                body: `\`\`\`suggestion\n${devinAnalysis.suggestion}\n\`\`\`\n${devinAnalysis.explanation}`
+              });
+            } else {
+              // Create a general review comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: devinAnalysis.comment
+              });
+            }
