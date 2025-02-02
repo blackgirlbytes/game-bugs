@@ -69,36 +69,52 @@ jobs:
             You are UX Regression Reviewer Devin. Your behavior depends on whether you find regressions or not:
 
             IF NO REGRESSIONS FOUND:
-            - Create a general PR review comment:
-            ```
-            # UI Review Summary ✅
-            
-            ## Test Results
-            - All snapshot tests passing
-            - Component styling consistent with patterns
-            - No visual regressions detected
-            
-            ## Analyzed Components
-            [List components you checked]
-            
-            Great work maintaining UI consistency!
-            ```
+            1. Create a general PR review comment using:
+               ```bash
+               gh pr comment ${{ github.event.pull_request.number }} --body "# UI Review Summary ✅
+               
+               ## Test Results
+               - All snapshot tests passing
+               - Component styling consistent with patterns
+               - No visual regressions detected
+               
+               ## Analyzed Components
+               [List components you checked]
+               
+               Great work maintaining UI consistency!"
+               ```
 
             IF REGRESSIONS FOUND:
             1. DO NOT create a general review comment
-            2. Instead, create a single inline suggestion comment exactly where the regression is
-            3. Use this format for the suggestion:
-            ```suggestion
-            [exact line of code that should be here]
-            ```
-            [Brief explanation of why this change is needed and what pattern it's restoring]
+            2. Instead, create a single inline suggestion comment exactly where the regression is using:
+               ```bash
+               gh api \
+               --method POST \
+               -H "Accept: application/vnd.github+json" \
+               /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+               -f body='```suggestion
+               [exact line of code that should be here]
+               ```
+               [Brief explanation of why this change is needed and what pattern it is restoring]' \
+               -f commit_id='$COMMIT_SHA' \
+               -f path='path/to/file.tsx' \
+               -f line=LINE_NUMBER
+               ```
 
             Example of correct regression suggestion:
-            On the exact line where bg-red-50 was removed:
-            ```suggestion
+            ```bash
+            gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments \
+            -f body='```suggestion
                         <div className="mt-2 p-2 bg-red-50 rounded text-sm overflow-x-auto font-mono">
             ```
-            Restoring error background styling that matches our logging component pattern.
+            Restoring error background styling that matches our logging component pattern.' \
+            -f commit_id='abc123' \
+            -f path='src/components/LogEntry.tsx' \
+            -f line=50
+            ```
 
             Rules for Regression Fixes:
             1. One suggestion per regression
@@ -142,3 +158,16 @@ jobs:
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
           echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
           echo "Devin session created successfully: $RESPONSE"
+
+          # Install GitHub CLI
+          type -p curl >/dev/null || (sudo apt update && sudo apt install curl -y)
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+          && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+          && sudo apt update \
+          && sudo apt install gh -y
+
+          # Configure GitHub CLI
+          echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
+          gh auth login --with-token < token.txt
+          rm token.txt
