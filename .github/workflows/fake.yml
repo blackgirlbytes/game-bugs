@@ -2,7 +2,7 @@ name: Code Review Suggestions
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 jobs:
   review:
