@@ -70,38 +70,70 @@ jobs:
             -d "{\"prompt\": \"$REVIEW_PROMPT\"}" \
             "https://api.devin.ai/v1/sessions")
 
-          # Extract Devin's analysis and save it
-          ANALYSIS=$(echo "$RESPONSE" | jq -r '.message')
+          # Debug: Print the raw response
+          echo "Raw Devin Response:"
+          echo "$RESPONSE"
+
+          # Extract message from response
+          MESSAGE=$(echo "$RESPONSE" | jq -r '.message')
           
-          # Escape the JSON for GitHub Actions
-          ESCAPED_ANALYSIS=$(echo "$ANALYSIS" | jq -c . | jq -R .)
-          echo "analysis=$ESCAPED_ANALYSIS" >> $GITHUB_OUTPUT
+          # Debug: Print the message
+          echo "Extracted Message:"
+          echo "$MESSAGE"
+
+          # Set the analysis output
+          echo "analysis=${MESSAGE}" >> $GITHUB_ENV
 
       - name: Process Devin's Review
-        if: steps.devin-review.outputs.analysis != ''
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const analysis = JSON.parse(${{ steps.devin-review.outputs.analysis }});
-            
-            if (analysis.hasRegressions) {
-              // Create a suggestion comment for the regression
-              await github.rest.pulls.createReviewComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.payload.pull_request.number,
-                commit_id: context.payload.pull_request.head.sha,
-                path: analysis.filePath,
-                line: analysis.line,
-                body: `\`\`\`suggestion\n${analysis.suggestion}\n\`\`\`\n${analysis.explanation}`
-              });
-            } else {
-              // Create a general review comment
+            try {
+              const rawAnalysis = process.env.analysis;
+              console.log('Raw analysis:', rawAnalysis);
+              
+              if (!rawAnalysis) {
+                throw new Error('No analysis received from Devin');
+              }
+              
+              const analysis = JSON.parse(rawAnalysis);
+              console.log('Parsed analysis:', analysis);
+              
+              if (!analysis || typeof analysis.hasRegressions !== 'boolean') {
+                throw new Error('Invalid analysis format');
+              }
+              
+              if (analysis.hasRegressions) {
+                // Create a suggestion comment for the regression
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  commit_id: context.payload.pull_request.head.sha,
+                  path: analysis.filePath,
+                  line: analysis.line,
+                  body: `\`\`\`suggestion\n${analysis.suggestion}\n\`\`\`\n${analysis.explanation}`
+                });
+              } else {
+                // Create a general review comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  body: analysis.comment
+                });
+              }
+            } catch (error) {
+              console.error('Error processing Devin analysis:', error);
+              
+              // Post error as PR comment
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.payload.pull_request.number,
-                body: analysis.comment
+                body: `Error in UX review: ${error.message}\n\nPlease check the workflow logs for details.`
               });
+              
+              throw error;
             }
