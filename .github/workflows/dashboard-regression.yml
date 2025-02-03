@@ -16,7 +16,6 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
 
 jobs:
   check-dashboard-regression:
@@ -33,103 +32,123 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Install dependencies
+        run: npm install
+
       - name: Run Dashboard Tests
         id: test-run
         run: |
-          npm install
           # Run dashboard-related tests with JSON reporter
-          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=dashboard-test-results.json || true
-          echo "Test run completed"
-
-      - name: Process Test Results
-        id: test-results
-        run: |
-          if [ -f dashboard-test-results.json ]; then
-            # Read test results and escape special characters
-            TEST_RESULTS=$(cat dashboard-test-results.json | jq -c . | sed 's/"/\\"/g')
-            echo "results<<EOF" >> $GITHUB_OUTPUT
-            echo "$TEST_RESULTS" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-            echo "has_results=true" >> $GITHUB_OUTPUT
-          else
-            echo "No test results file found"
-            echo "has_results=false" >> $GITHUB_OUTPUT
-          fi
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
+          
+          # Save test results for Devin to analyze
+          TEST_OUTPUT=$(cat test-results.json | jq -c .)
+          echo "test-output=$TEST_OUTPUT" >> $GITHUB_OUTPUT
 
       - name: Create Devin Review Session
-        if: steps.test-results.outputs.has_results == 'true'
         id: devin-review
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
+          TEST_OUTPUT: ${{ steps.test-run.outputs.test-output }}
+          
+          REVIEW_PROMPT: |
+            You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback. Return a JSON response in one of these two formats with no other text:
+
+            For no regressions:
+            {
+              "hasRegressions": false,
+              "comment": "# Dashboard Review Summary ✅\n\n## Test Results\n- All tests passing\n- No regressions detected\n\nGreat work maintaining dashboard functionality!"
+            }
+
+            For regressions found:
+            {
+              "hasRegressions": true,
+              "filePath": "src/components/logs/LogEntry.tsx",
+              "line": 15,
+              "suggestion": "      timeZone: 'America/New_York'",
+              "explanation": "Reverting timezone change to maintain consistency with existing snapshots and prevent display regressions. The America/New_York timezone is used throughout our tests and UI components."
+            }
+
+            Focus on:
+            1. Timezone handling and display issues
+            2. Log entry formatting
+            3. Error distribution calculations
+            4. Snapshot test failures
+
+            Test Results to analyze:
+            ${{ steps.test-run.outputs.test-output }}
         run: |
-          # Get test results from previous step
-          TEST_RESULTS='${{ steps.test-results.outputs.results }}'
-
-          # Create the prompt
-          PROMPT=$(cat <<'EOT'
-          You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback.
-
-          1. Review the test failures in the dashboard test results:
-             - Analyze failed assertions and snapshots
-             - Compare expected vs actual outputs
-             - Identify regression patterns
-          2. Check the PR changes that caused these test failures
-          3. Read the PR discussion to see what previous comments have been made
-          4. Analyze the regression impact, focusing on:
-             a. Time Display Issues:
-                - UTC vs local time display issues
-                - Timestamp formatting problems
-                - Timezone handling bugs
-             b. Log Entry Display:
-                - Log entry formatting regressions
-                - Severity badge display issues
-                - Filtering functionality problems
-             c. Error Distribution:
-                - Error counting logic regressions
-                - Chart data processing issues
-                - Category grouping problems
-
-          Rules:
-          1. NEVER make commits - only review and comment
-          2. One suggestion per regression issue
-          3. Use inline feedback with line references
-          4. Include code snippets in markdown
-          5. Consider timezone implications
-          6. Focus on dashboard regressions
-          7. Maximum three comments per review
-          8. Never ask for confirmation
-
-          Test Results to analyze:
-          ${TEST_RESULTS}
-          EOT
-          )
-
-          # Escape the prompt for JSON
-          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s '.')
-
-          # Debug output
-          echo "Sending request to Devin API with prompt length: ${#PROMPT}"
-          echo "First 500 chars of escaped prompt:"
-          echo "$ESCAPED_PROMPT" | head -c 500
-
-          # Make the API call with minimal JSON
-          RESPONSE=$(curl -v -s -X POST \
+          # Make the API call to Devin
+          RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            -d "{\"prompt\": \"$REVIEW_PROMPT\"}" \
             "https://api.devin.ai/v1/sessions")
 
-          echo "Full Devin API Response:"
+          # Debug: Print the raw response
+          echo "Raw Devin Response:"
           echo "$RESPONSE"
 
-          # Extract and validate session details
-          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty')
-          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
-            echo "Error: Failed to get valid session ID from response"
-            echo "Response was: $RESPONSE"
-            exit 1
-          fi
+          # Extract message from response
+          MESSAGE=$(echo "$RESPONSE" | jq -r '.message')
+          
+          # Debug: Print the message
+          echo "Extracted Message:"
+          echo "$MESSAGE"
 
-          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          # Set the analysis output
+          echo "analysis=${MESSAGE}" >> $GITHUB_ENV
+
+      - name: Process Devin's Review
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              const rawAnalysis = process.env.analysis;
+              console.log('Raw analysis:', rawAnalysis);
+              
+              if (!rawAnalysis) {
+                throw new Error('No analysis received from Devin');
+              }
+              
+              const analysis = JSON.parse(rawAnalysis);
+              console.log('Parsed analysis:', analysis);
+              
+              if (!analysis || typeof analysis.hasRegressions !== 'boolean') {
+                throw new Error('Invalid analysis format');
+              }
+              
+              if (analysis.hasRegressions) {
+                // Create a suggestion comment for the regression
+                await github.rest.pulls.createReviewComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: context.payload.pull_request.number,
+                  commit_id: context.payload.pull_request.head.sha,
+                  path: analysis.filePath,
+                  line: analysis.line,
+                  body: `\`\`\`suggestion\n${analysis.suggestion}\n\`\`\`\n${analysis.explanation}`
+                });
+              } else {
+                // Create a general review comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.payload.pull_request.number,
+                  body: analysis.comment
+                });
+              }
+            } catch (error) {
+              console.error('Error processing Devin analysis:', error);
+              
+              // Post error as PR comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: `Error in dashboard regression review: ${error.message}\n\nPlease check the workflow logs for details.`
+              });
+              
+              throw error;
+            }
