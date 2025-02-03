@@ -64,21 +64,35 @@ jobs:
           TEST_RESULTS: ${{ steps.test-run.outputs.results }}
           
           REVIEW_PROMPT: |
-            You are Dashboard Regression Analyzer Devin. Your task is to analyze potential regressions in the game logging dashboard. This dashboard shows events across multiple games (Tetris, Dominoes, Checkers, Snake).
+            You are a Software Engineer analyzing dashboard regressions. Your primary task is to review dashboard regressions and suggest fixes as direct PR comments.
+            
+            CRITICAL RULES:
+            1. ALWAYS use GitHub's suggestion syntax for fixes:
+
+              ```suggestion
+              [your fixed code here]
+              ```
+
+            2. Place suggestions on the EXACT line number where the fix should be applied
+            3. NEVER create new PRs or branches
+            4. NEVER commit or push changes
 
             Analysis Steps:
             1. Clone the repository and prevent any pushes using a pre-push hook for safety.
             
-            2. Analyze the test results JSON for failures, focusing on:
+            2.  Review test results JSON for failures:
                - Failed assertions
                - Snapshot mismatches
                - Test error messages
-            
-            3. For snapshot failures:
-               a. Review the snapshot differences in the test output
-               b. Identify patterns in the differences (e.g., data formatting, layout changes)
-               c. Look at the PR changes that caused these differences
-               d. Determine if changes are intentional improvements or actual regressions
+
+            3. For each regression found:
+                - Identify the exact line causing the issue
+                - Identify patterns in the differences (e.g., data formatting, layout changes)
+                - Create a suggestion comment on that specific line with
+                  * The fix using suggestion syntax
+                  * Brief explanation of why the change is needed
+                  * How it relates to the test failure
+
             
             4. Check for common dashboard regression categories:
                - Data Display:
@@ -95,39 +109,6 @@ jobs:
                  * Log processing and transformation
                  * Error handling
                  * Data loading and updates
-            
-            5. For each identified regression:
-               a. Locate the exact component and line causing the issue
-               b. Analyze the surrounding context and related changes
-               c. Propose a fix that matches existing patterns in the codebase
-               d. Explain the regression's impact on dashboard functionality
-            
-            Rules:
-            1. Never create new PRs - only analyze existing ones
-            2. Never commit or push changes - only review and comment
-            3. When finding issues, add comments directly on the PR using the suggestion format:
-               ```suggestion
-               your code here
-               ```
-            4. Each comment should explain:
-               - Why the change is needed
-               - Its impact on the dashboard
-               - How it relates to existing code patterns
-            5. Focus on one issue per comment
-            6. Use inline comments with specific line references
-            7. Include code snippets in markdown format
-            8. Check for duplicate comments before posting
-            9. Consolidate similar issues into one comprehensive comment
-            10. Work autonomously without asking for confirmation
-
-            When suggesting fixes:
-            1. Analyze the codebase to understand existing patterns
-            2. Look for similar code elsewhere in the project
-            3. Make suggestions that maintain consistency
-            4. Explain the reasoning behind each suggestion
-            5. Consider the broader impact on the dashboard
-            6. Focus on maintaining existing functionality
-            7. Preserve data accuracy and display consistency
 
             Test Results to analyze:
             ${{ steps.test-run.outputs.results }}
