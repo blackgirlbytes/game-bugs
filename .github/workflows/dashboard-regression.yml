@@ -41,6 +41,10 @@ jobs:
           # Run dashboard-related tests with JSON reporter
           npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
+          # Check if there were any failures and set output
+          TEST_STATUS=$(cat test-results.json | jq -r '.success')
+          echo "test-status=$TEST_STATUS" >> $GITHUB_OUTPUT
+          
           # Save test results for Devin to analyze
           TEST_OUTPUT=$(cat test-results.json | jq -c .)
           echo "test-output=$TEST_OUTPUT" >> $GITHUB_OUTPUT
@@ -49,6 +53,7 @@ jobs:
         id: devin-review
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          TEST_STATUS: ${{ steps.test-run.outputs.test-status }}
           TEST_OUTPUT: ${{ steps.test-run.outputs.test-output }}
           
           REVIEW_PROMPT: |
@@ -75,8 +80,9 @@ jobs:
             3. Error distribution calculations
             4. Snapshot test failures
 
-            Test Results to analyze:
-            ${{ steps.test-run.outputs.test-output }}
+            Test Results:
+            Status: ${{ steps.test-run.outputs.test-status }}
+            Details: ${{ steps.test-run.outputs.test-output }}
         run: |
           # Make the API call to Devin
           RESPONSE=$(curl -s -X POST \
