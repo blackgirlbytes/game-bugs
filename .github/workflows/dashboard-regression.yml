@@ -15,8 +15,8 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
-  issues: read
+  pull-requests: write
+  issues: write
 
 jobs:
   check-dashboard-regression:
@@ -38,101 +38,98 @@ jobs:
         run: |
           npm install
           # Run dashboard-related tests with JSON reporter
-          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=dashboard-test-results.json
-        continue-on-error: true
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=dashboard-test-results.json || true
+          echo "Test run completed"
 
-      - name: Get Test Results
+      - name: Process Test Results
         id: test-results
-        if: steps.test-run.outcome == 'failure'
         run: |
-          # Read and format test results for Devin
-          TEST_RESULTS=$(cat dashboard-test-results.json | jq -c .)
-          echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
+          if [ -f dashboard-test-results.json ]; then
+            # Read test results and escape special characters
+            TEST_RESULTS=$(cat dashboard-test-results.json | jq -c . | sed 's/"/\\"/g')
+            echo "results<<EOF" >> $GITHUB_OUTPUT
+            echo "$TEST_RESULTS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "has_results=true" >> $GITHUB_OUTPUT
+          else
+            echo "No test results file found"
+            echo "has_results=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create Devin Review Session
-        if: steps.test-run.outcome == 'failure'
+        if: steps.test-results.outputs.has_results == 'true'
         id: devin-review
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
-          TEST_RESULTS: ${{ steps.test-results.outputs.results }}
-          
-          REVIEW_PROMPT: |
-            You are analyzing potential regressions in the game-logs dashboard. Your tasks:
-
-            1. Review the test failures in the dashboard test results:
-               - Analyze failed assertions and snapshots
-               - Compare expected vs actual outputs
-               - Identify regression patterns
-
-            2. Focus Areas for Dashboard Regressions:
-               a. Time Display Issues:
-                  - UTC vs local time display issues
-                  - Timestamp formatting problems
-                  - Timezone handling bugs
-               
-               b. Log Entry Display:
-                  - Log entry formatting regressions
-                  - Severity badge display issues
-                  - Filtering functionality problems
-               
-               c. Error Distribution:
-                  - Error counting logic regressions
-                  - Chart data processing issues
-                  - Category grouping problems
-
-            3. For each identified regression:
-               - Locate the exact line causing the issue
-               - Propose a fix as a GitHub suggestion comment
-               - Explain the regression's impact on dashboard functionality
-
-            Rules and Guidelines:
-            1. NEVER make any commits or pushes - only review and comment
-            2. One suggestion per regression issue
-            3. Use inline feedback with specific line references
-            4. Include before/after code snippets in markdown
-            5. Consider timezone and data processing implications
-            6. Focus only on dashboard-related regressions
-            7. Verify suggestions maintain existing functionality
-            8. Check that the issue wasn't addressed in previous reviews
-            9. Consolidate similar issues into one comment
-            10. Maximum of three comments per review
-            
-            Test Results to analyze:
-            ${{ steps.test-results.outputs.results }}
-
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
-          # Convert multiline string to JSON-safe format
-          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+          # Get test results from previous step
+          TEST_RESULTS='${{ steps.test-results.outputs.results }}'
 
-          RESPONSE=$(curl -s -X POST \
+          # Create the prompt
+          PROMPT=$(cat <<'EOT'
+          You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback.
+
+          1. Review the test failures in the dashboard test results:
+             - Analyze failed assertions and snapshots
+             - Compare expected vs actual outputs
+             - Identify regression patterns
+          2. Check the PR changes that caused these test failures
+          3. Read the PR discussion to see what previous comments have been made
+          4. Analyze the regression impact, focusing on:
+             a. Time Display Issues:
+                - UTC vs local time display issues
+                - Timestamp formatting problems
+                - Timezone handling bugs
+             b. Log Entry Display:
+                - Log entry formatting regressions
+                - Severity badge display issues
+                - Filtering functionality problems
+             c. Error Distribution:
+                - Error counting logic regressions
+                - Chart data processing issues
+                - Category grouping problems
+
+          Rules:
+          1. NEVER make commits - only review and comment
+          2. One suggestion per regression issue
+          3. Use inline feedback with line references
+          4. Include code snippets in markdown
+          5. Consider timezone implications
+          6. Focus on dashboard regressions
+          7. Maximum three comments per review
+          8. Never ask for confirmation
+
+          Test Results to analyze:
+          ${TEST_RESULTS}
+          EOT
+          )
+
+          # Escape the prompt for JSON
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s '.')
+
+          # Debug output
+          echo "Sending request to Devin API with prompt length: ${#PROMPT}"
+          echo "First 500 chars of escaped prompt:"
+          echo "$ESCAPED_PROMPT" | head -c 500
+
+          # Make the API call with minimal JSON
+          RESPONSE=$(curl -v -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{
-              \"prompt\": $ESCAPED_PROMPT,
-              \"files\": {
-                \"test-results\": \"$TEST_RESULTS\",
-                \"dashboard\": \"./src/components/LogDashboard.tsx\",
-                \"log-entry\": \"./src/components/logs/LogEntry.tsx\",
-                \"log-utils\": \"./src/utils/logUtils.ts\"
-              }
-            }" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
 
-          # Check for errors in the response
-          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
-          if [ "$ERROR_MSG" != "null" ]; then
-            echo "Error creating Devin session: $ERROR_MSG"
-            exit 1
-          fi
+          echo "Full Devin API Response:"
+          echo "$RESPONSE"
 
-          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
-          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
-
-          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
-            echo "Error: Devin session details are missing from the response."
+          # Extract and validate session details
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty')
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+            echo "Error: Failed to get valid session ID from response"
+            echo "Response was: $RESPONSE"
             exit 1
           fi
 
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
-          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $RESPONSE"
