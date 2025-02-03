@@ -38,25 +38,20 @@ jobs:
       - name: Run Dashboard Tests
         id: test-run
         run: |
-          # Store the current branch name
-          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-          
-          # Get the old snapshots for comparison
-          git checkout HEAD^ 
-          mkdir -p old-snapshots
-          cp -r tests/utils/__snapshots__ tests/components/__snapshots__ tests/logs/__snapshots__ old-snapshots/ 2>/dev/null || true
-          
-          # Return to current branch
-          git checkout $CURRENT_BRANCH
-          
-          # Run dashboard-related tests with JSON reporter
+          # Run tests WITHOUT updating snapshots to catch mismatches
           npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
-          # Compare snapshots and save differences
-          SNAPSHOT_DIFF=$(diff -r old-snapshots tests/ || true)
-          echo "SNAPSHOT_DIFF<<EOF" >> $GITHUB_ENV
-          echo "$SNAPSHOT_DIFF" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          # If there are snapshot failures, run again with --updateSnapshot to see the differences
+          if grep -q "snapshot" test-results.json; then
+            echo "Snapshot failures detected. Analyzing differences..."
+            # Run update snapshot in dry-run mode to see what would change
+            npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' -u --dry-run > snapshot-diff.txt 2>&1 || true
+            
+            # Save the snapshot differences
+            echo "SNAPSHOT_DIFF<<EOF" >> $GITHUB_ENV
+            cat snapshot-diff.txt >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+          fi
 
           # Save test results for Devin to analyze
           TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
@@ -80,7 +75,7 @@ jobs:
                - Test error messages
             
             3. For snapshot failures:
-               a. Review the snapshot differences provided in ${{ env.SNAPSHOT_DIFF }}
+               a. Review the snapshot differences in the test output
                b. Identify patterns in the differences (e.g., data formatting, layout changes)
                c. Look at the PR changes that caused these differences
                d. Determine if changes are intentional improvements or actual regressions
@@ -123,6 +118,9 @@ jobs:
 
             Test Results to analyze:
             ${{ steps.test-run.outputs.results }}
+
+            Snapshot Differences (if any):
+            ${{ env.SNAPSHOT_DIFF }}
         run: |
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
