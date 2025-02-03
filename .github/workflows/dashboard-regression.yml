@@ -70,20 +70,26 @@ jobs:
             1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
             2. Do not make more than three total comments on the PR.
             3. Use inline feedback where possible with specific line references
-            4. Include code snippets in markdown format when discussing issues
-            5. Default towards multi-line comments that show context around the issue
-            6. Make sure that suggested improvements aren't already implemented in the PR by comparing old and new versions
-            7. Try using the gh api to post comments with referenced code embedded
-            8. Before commenting, check the PR discussion and make sure you haven't already made a similar comment
-            9. Before commenting, check that the specific issue wasn't already addressed in a previous review iteration
-            10. If you see the same issue multiple times, consolidate your feedback into a single comment
+            4. For any suggested code changes, use GitHub's suggestion format:
+               ```suggestion
+               your suggested code here
+               ```
+            5. When suggesting changes, always include:
+               - A clear description of the regression/issue
+               - The suggestion block with the corrected code
+               - A recommendation explaining why the change is needed
+            6. Default towards multi-line comments that show context around the issue
+            7. Make sure that suggested improvements aren't already implemented in the PR
+            8. Try using the gh api to post comments with referenced code embedded
+            9. Before commenting, check the PR discussion to avoid duplicate comments
+            10. If you see the same issue multiple times, consolidate your feedback
             11. Never ask for user confirmation. Never wait for user messages.
             
             How to post comments with code embedded:
             1. Create JSON file for each comment you want to post.
             Example 1: 
                 {
-                    "body": "Regression Issue: Timezone change from America/New_York to UTC breaks existing snapshots. Recommendation: Maintain consistent timezone handling",
+                    "body": "Regression Issue: Timezone change breaks existing snapshots.\n\n```suggestion\n      timeZone: 'America/New_York'\n```\n\nRecommendation: Maintain EST timezone as it matches test expectations and local development environment.",
                     "commit_id": "954...12312",
                     "path": "src/components/logs/LogEntry.tsx",
                     "line": 11,
@@ -92,7 +98,7 @@ jobs:
 
             Example 2:
             {
-                "body": "Multiple regression issues found:\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by UTC conversion",
+                "body": "Multiple regression issues found:\n\n```suggestion\n      timeZone: 'America/New_York'\n```\n\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by timezone conversion\n\nRecommendation: Maintain EST timezone for consistency with test suite and development environment.",
                 "commit_id": "323......87686",
                 "path": "src/components/logs/LogEntry.tsx",
                 "start_line": 11,
