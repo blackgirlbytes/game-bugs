@@ -42,7 +42,7 @@ jobs:
           npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
           # Save test results for Devin to analyze
-          TEST_RESULTS=$(cat test-results.json | jq -c .)
+          TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
           echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
 
       - name: Create Devin Review Session
@@ -119,13 +119,15 @@ jobs:
 
             Test Results to analyze:
             ${{ steps.test-run.outputs.results }}
-
         run: |
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+
           # Make the API call to Devin
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"prompt\": \"$REVIEW_PROMPT\"}" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
 
           # Debug: Print the raw response
