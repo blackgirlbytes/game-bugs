@@ -103,18 +103,31 @@ jobs:
                d. Explain the regression's impact on dashboard functionality
             
             Rules:
-            1. Never commit or push changes - only review and comment
-            2. Limit to three significant comments per PR
-            3. Use inline comments with specific line references
-            4. Include code snippets in markdown format
-            5. For suggestions, use GitHub's suggestion format:
+            1. Never create new PRs - only analyze existing ones
+            2. Never commit or push changes - only review and comment
+            3. When finding issues, add comments directly on the PR using the suggestion format:
                ```suggestion
-               your suggested code here
+               your code here
                ```
-            6. Always explain why a change is needed and its impact
-            7. Check for duplicate comments before posting
-            8. Consolidate similar issues into one comprehensive comment
-            9. Work autonomously without asking for confirmation
+            4. Each comment should explain:
+               - Why the change is needed
+               - Its impact on the dashboard
+               - How it relates to existing code patterns
+            5. Focus on one issue per comment
+            6. Use inline comments with specific line references
+            7. Include code snippets in markdown format
+            8. Check for duplicate comments before posting
+            9. Consolidate similar issues into one comprehensive comment
+            10. Work autonomously without asking for confirmation
+
+            When suggesting fixes:
+            1. Analyze the codebase to understand existing patterns
+            2. Look for similar code elsewhere in the project
+            3. Make suggestions that maintain consistency
+            4. Explain the reasoning behind each suggestion
+            5. Consider the broader impact on the dashboard
+            6. Focus on maintaining existing functionality
+            7. Preserve data accuracy and display consistency
 
             Test Results to analyze:
             ${{ steps.test-run.outputs.results }}
