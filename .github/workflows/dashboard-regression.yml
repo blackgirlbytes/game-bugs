@@ -45,11 +45,11 @@ jobs:
         id: test-results
         run: |
           if [ -f dashboard-test-results.json ]; then
-            # Read and format test results
-            TEST_RESULTS=$(cat dashboard-test-results.json | jq -c .)
-            # Escape newlines and quotes for GitHub Actions
-            ESCAPED_RESULTS=$(echo "$TEST_RESULTS" | jq -R -s .)
-            echo "results=$ESCAPED_RESULTS" >> $GITHUB_OUTPUT
+            # Read test results and escape special characters
+            TEST_RESULTS=$(cat dashboard-test-results.json | jq -c . | sed 's/"/\\"/g')
+            echo "results<<EOF" >> $GITHUB_OUTPUT
+            echo "$TEST_RESULTS" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
             echo "has_results=true" >> $GITHUB_OUTPUT
           else
             echo "No test results file found"
@@ -63,11 +63,13 @@ jobs:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-          TEST_RESULTS: ${{ steps.test-results.outputs.results }}
         run: |
+          # Get test results from previous step
+          TEST_RESULTS='${{ steps.test-results.outputs.results }}'
+
           # Create the prompt
-          read -r -d '' PROMPT << 'EOF'
-          You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback. Your tasks:
+          PROMPT=$(cat <<'EOT'
+          You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback.
 
           1. Review the test failures in the dashboard test results:
              - Analyze failed assertions and snapshots
@@ -88,49 +90,46 @@ jobs:
                 - Error counting logic regressions
                 - Chart data processing issues
                 - Category grouping problems
-          5. For each identified regression:
-             - Locate the exact line causing the issue
-             - Propose a fix as a GitHub suggestion comment
-             - Explain the regression's impact on dashboard functionality
 
-          Rules and Guidelines:
-          1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review and comment
+          Rules:
+          1. NEVER make commits - only review and comment
           2. One suggestion per regression issue
-          3. Use inline feedback with specific line references
-          4. Include code snippets in markdown format
-          5. Consider timezone and data processing implications
-          6. Focus only on dashboard-related regressions
-          7. Verify suggestions maintain existing functionality
-          8. Check that the issue wasn't addressed in previous reviews
-          9. Consolidate similar issues into one comment
-          10. Maximum of three comments per review
-          11. Never ask for user confirmation. Never wait for user messages.
+          3. Use inline feedback with line references
+          4. Include code snippets in markdown
+          5. Consider timezone implications
+          6. Focus on dashboard regressions
+          7. Maximum three comments per review
+          8. Never ask for confirmation
 
           Test Results to analyze:
-          $TEST_RESULTS
-          EOF
+          ${TEST_RESULTS}
+          EOT
+          )
 
           # Escape the prompt for JSON
-          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s '.')
 
-          # Make the API call
-          echo "Sending request to Devin API..."
-          RESPONSE=$(curl -s -X POST \
+          # Debug output
+          echo "Sending request to Devin API with prompt length: ${#PROMPT}"
+          echo "First 500 chars of escaped prompt:"
+          echo "$ESCAPED_PROMPT" | head -c 500
+
+          # Make the API call with minimal JSON
+          RESPONSE=$(curl -v -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
 
-          echo "Devin API Response: $RESPONSE"
+          echo "Full Devin API Response:"
+          echo "$RESPONSE"
 
           # Extract and validate session details
           SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty')
-          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
-
           if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
             echo "Error: Failed to get valid session ID from response"
+            echo "Response was: $RESPONSE"
             exit 1
           fi
 
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
-          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
