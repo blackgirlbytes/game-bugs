@@ -122,12 +122,39 @@ jobs:
             Rules and Guidelines: |
                 1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
                 2. Do not make more than three total comments on the PR
-                3. For each suggestion:
+                3. IMPORTANT: Always follow this exact order for commenting:
+                   a. First create a draft review:
+                      ```bash
+                      echo "{\"event\":\"COMMENT\",\"body\":\"Dashboard regression review\"}" > review.json
+                      REVIEW_ID=$(gh api \
+                        --method POST \
+                        -H "Accept: application/vnd.github+json" \
+                        "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+                        --input review.json | jq -r '.id')
+                      ```
+                   b. Then add your comments to that review:
+                      ```bash
+                      gh api \
+                        --method POST \
+                        -H "Accept: application/vnd.github+json" \
+                        "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments" \
+                        --input comment.json
+                      ```
+                   c. Finally submit the review:
+                      ```bash
+                      echo "{\"event\":\"COMMENT\"}" > submit.json
+                      gh api \
+                        --method POST \
+                        -H "Accept: application/vnd.github+json" \
+                        "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/events" \
+                        --input submit.json
+                      ```
+                4. For each suggestion:
                     - First state what the test expected vs what it received
                     - Show the exact line(s) that caused the regression
                     - Explain why the current code causes the test to fail
                     - Provide a minimal, specific code fix
-                4. Format suggestions using: |
+                5. Format suggestions using: |
                     ```suggestion
                     [your specific code fix here]
                     ```
@@ -159,6 +186,22 @@ jobs:
             How to post comments with code embedded: |
                 1. Create JSON file for each comment you want to post.
                 Example 1: |
+                    # First create a draft review
+                    echo "{\"event\":\"COMMENT\",\"body\":\"Dashboard regression review\"}" > review.json
+                    REVIEW_ID=$(gh api \
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+                      --input review.json | jq -r '.id')
+
+                    # Verify review was created
+                    if [ -z "$REVIEW_ID" ] || [ "$REVIEW_ID" = "null" ]; then
+                      echo "Failed to create review"
+                      exit 1
+                    fi
+
+                    # Then create and post your comment
+                    cat > comment.json << EOL
                     {
                         "body": "Regression Issue: [describe the specific test failure]\n\n```suggestion\n      [corrected code that fixes the failing test]\n```\n\nRecommendation: [explain why this change fixes the regression]",
                         "commit_id": "${{ steps.pr-files.outputs.head_sha }}",
@@ -167,6 +210,22 @@ jobs:
                         "subject_type": "line",
                         "side": "RIGHT"
                     }
+                    EOL
+
+                    # Add the comment to the review
+                    gh api \
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments" \
+                      --input comment.json
+
+                    # Finally submit the review
+                    echo "{\"event\":\"COMMENT\"}" > submit.json
+                    gh api \
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/events" \
+                      --input submit.json
 
                 Example 2: |
                     {
@@ -182,20 +241,36 @@ jobs:
                 You can find this by looking at the line numbers in pr_diffs.txt.
 
                 2. Use gh api command with review creation: |
-                    # First create a review
+                    # Create a draft review first
+                    echo "{\"event\":\"COMMENT\",\"body\":\"Dashboard regression review\"}" > review.json
+                    
                     REVIEW_ID=$(gh api \
-                    --method POST \
-                    -H "Accept: application/vnd.github+json" \
-                    /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
-                    -f event='COMMENT' \
-                    | jq -r '.id')
-
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
+                      --input review.json | jq -r '.id')
+                    
+                    if [ -z "$REVIEW_ID" ] || [ "$REVIEW_ID" = "null" ]; then
+                      echo "Failed to create review"
+                      exit 1
+                    fi
+                    
+                    echo "Created review with ID: $REVIEW_ID"
+                    
                     # Then add the comment to the review
                     gh api \
-                    --method POST \
-                    -H "Accept: application/vnd.github+json" \
-                    /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments \
-                    --input comment.json
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments" \
+                      --input comment.json
+                      
+                    # Finally submit the review
+                    echo "{\"event\":\"COMMENT\"}" > submit.json
+                    gh api \
+                      --method POST \
+                      -H "Accept: application/vnd.github+json" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/events" \
+                      --input submit.json
 
             Changed files to review:
             ${{ steps.pr-files.outputs.files }}
