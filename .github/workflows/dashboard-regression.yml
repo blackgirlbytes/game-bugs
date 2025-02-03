@@ -87,6 +87,7 @@ jobs:
         id: devin-review
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TEST_RESULTS: ${{ steps.test-run.outputs.results }}
           FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
           HEAD_SHA: ${{ steps.pr-files.outputs.head_sha }}
@@ -183,49 +184,27 @@ jobs:
                       * Error handling
                       * Data loading and updates
 
-            How to post comments with code embedded: |
+            How to post comments with code embedded:
                 1. Create JSON file for each comment you want to post.
                 Example 1: |
-                    # First create a draft review
-                    echo "{\"event\":\"COMMENT\",\"body\":\"Dashboard regression review\"}" > review.json
-                    REVIEW_ID=$(gh api \
-                      --method POST \
-                      -H "Accept: application/vnd.github+json" \
-                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews" \
-                      --input review.json | jq -r '.id')
-
-                    # Verify review was created
-                    if [ -z "$REVIEW_ID" ] || [ "$REVIEW_ID" = "null" ]; then
-                      echo "Failed to create review"
-                      exit 1
-                    fi
-
-                    # Then create and post your comment
-                    cat > comment.json << EOL
                     {
                         "body": "Regression Issue: [describe the specific test failure]\n\n```suggestion\n      [corrected code that fixes the failing test]\n```\n\nRecommendation: [explain why this change fixes the regression]",
                         "commit_id": "${{ steps.pr-files.outputs.head_sha }}",
                         "path": "src/components/example/Component.tsx",
                         "position": 1,
-                        "subject_type": "line",
                         "side": "RIGHT"
                     }
-                    EOL
 
-                    # Add the comment to the review
+                2. Use gh api command to post the comment:
                     gh api \
                       --method POST \
                       -H "Accept: application/vnd.github+json" \
-                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments" \
+                      -H "Authorization: Bearer $GITHUB_TOKEN" \
+                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments" \
                       --input comment.json
 
-                    # Finally submit the review
-                    echo "{\"event\":\"COMMENT\"}" > submit.json
-                    gh api \
-                      --method POST \
-                      -H "Accept: application/vnd.github+json" \
-                      "/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/events" \
-                      --input submit.json
+                Note: The position parameter is a number indicating the position in the diff where you want to add the comment.
+                You can find this by looking at the line numbers in the diff data: ${{ steps.pr-files.outputs.diffs }}
 
                 Example 2: |
                     {
