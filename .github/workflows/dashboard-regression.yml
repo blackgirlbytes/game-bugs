@@ -38,132 +38,99 @@ jobs:
         run: |
           npm install
           # Run dashboard-related tests with JSON reporter
-          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=dashboard-test-results.json
-        continue-on-error: true
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=dashboard-test-results.json || true
+          echo "Test run completed"
 
-      - name: Get Test Results
+      - name: Process Test Results
         id: test-results
-        if: steps.test-run.outcome == 'failure'
         run: |
-          # Read test results as JSON
-          TEST_RESULTS=$(cat dashboard-test-results.json | jq -c .)
-          echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
+          if [ -f dashboard-test-results.json ]; then
+            # Read and format test results
+            TEST_RESULTS=$(cat dashboard-test-results.json | jq -c .)
+            # Escape newlines and quotes for GitHub Actions
+            ESCAPED_RESULTS=$(echo "$TEST_RESULTS" | jq -R -s .)
+            echo "results=$ESCAPED_RESULTS" >> $GITHUB_OUTPUT
+            echo "has_results=true" >> $GITHUB_OUTPUT
+          else
+            echo "No test results file found"
+            echo "has_results=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create Devin Review Session
-        if: steps.test-run.outcome == 'failure'
+        if: steps.test-results.outputs.has_results == 'true'
         id: devin-review
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
           TEST_RESULTS: ${{ steps.test-results.outputs.results }}
-          
-          REVIEW_PROMPT: |
-            You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback. Your tasks:
-
-            1. Clone the repository ${{ github.repository }} locally.
-            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
-            3. Review the test failures in the dashboard test results:
-               - Analyze failed assertions and snapshots
-               - Compare expected vs actual outputs
-               - Identify regression patterns
-            4. Check the PR changes that caused these test failures
-            5. Read the PR discussion to see what previous comments have been made
-            6. Analyze the regression impact, focusing on:
-               a. Time Display Issues:
-                  - UTC vs local time display issues
-                  - Timestamp formatting problems
-                  - Timezone handling bugs
-               b. Log Entry Display:
-                  - Log entry formatting regressions
-                  - Severity badge display issues
-                  - Filtering functionality problems
-               c. Error Distribution:
-                  - Error counting logic regressions
-                  - Chart data processing issues
-                  - Category grouping problems
-            7. For each identified regression:
-               - Locate the exact line causing the issue
-               - Propose a fix as a GitHub suggestion comment
-               - Explain the regression's impact on dashboard functionality
-
-            Rules and Guidelines:
-            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review and comment
-            2. One suggestion per regression issue
-            3. Use inline feedback with specific line references
-            4. Include code snippets in markdown format
-            5. Consider timezone and data processing implications
-            6. Focus only on dashboard-related regressions
-            7. Verify suggestions maintain existing functionality
-            8. Check that the issue wasn't addressed in previous reviews
-            9. Consolidate similar issues into one comment
-            10. Maximum of three comments per review
-            11. Never ask for user confirmation. Never wait for user messages.
-            
-            How to post comments with code embedded:
-            1. Create JSON file for each comment you want to post.
-            Example 1: 
-                {
-                    "body": "Regression Issue: Timezone change from America/New_York to UTC breaks existing snapshots. Recommendation: Maintain consistent timezone handling",
-                    "commit_id": "954...12312",
-                    "path": "src/components/logs/LogEntry.tsx",
-                    "line": 11,
-                    "side": "RIGHT"
-                }
-
-            Example 2:
-            {
-                "body": "Multiple regression issues found:\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by UTC conversion",
-                "commit_id": "323......87686",
-                "path": "src/components/logs/LogEntry.tsx",
-                "start_line": 11,
-                "start_side": "RIGHT",
-                "line": 25,
-                "side": "RIGHT"
-            }
-
-            body: The text of the review comment. Include markdown code blocks for snippets
-            commit_id: SHA of the commit you're reviewing
-            path: Relative file path in repo
-            line (integer): Line number in the PR diff for the comment
-            side: Can be LEFT or RIGHT. Use LEFT for deletions, RIGHT for additions
-            subject_type: Either "line" or "file"
-            start_line (integer): First line for multi-line comments
-            start_side: Starting side for multi-line comments (LEFT or RIGHT)
-
-            2. Use gh api command:
-                        gh api \\
-            --method POST \\
-            -H "Accept: application/vnd.github+json" \\
-            /repos/owner/repo/pulls/number/comments \\
-            --input comment.json
-
-            Test Results to analyze:
-            ${{ steps.test-results.outputs.results }}
-
         run: |
-          # Convert multiline string to JSON-safe format
-          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+          # Create the prompt
+          read -r -d '' PROMPT << 'EOF'
+          You are Dashboard Regression Analyzer Devin. Your task is to analyze test failures in the game-logs dashboard and provide detailed feedback. Your tasks:
 
+          1. Review the test failures in the dashboard test results:
+             - Analyze failed assertions and snapshots
+             - Compare expected vs actual outputs
+             - Identify regression patterns
+          2. Check the PR changes that caused these test failures
+          3. Read the PR discussion to see what previous comments have been made
+          4. Analyze the regression impact, focusing on:
+             a. Time Display Issues:
+                - UTC vs local time display issues
+                - Timestamp formatting problems
+                - Timezone handling bugs
+             b. Log Entry Display:
+                - Log entry formatting regressions
+                - Severity badge display issues
+                - Filtering functionality problems
+             c. Error Distribution:
+                - Error counting logic regressions
+                - Chart data processing issues
+                - Category grouping problems
+          5. For each identified regression:
+             - Locate the exact line causing the issue
+             - Propose a fix as a GitHub suggestion comment
+             - Explain the regression's impact on dashboard functionality
+
+          Rules and Guidelines:
+          1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review and comment
+          2. One suggestion per regression issue
+          3. Use inline feedback with specific line references
+          4. Include code snippets in markdown format
+          5. Consider timezone and data processing implications
+          6. Focus only on dashboard-related regressions
+          7. Verify suggestions maintain existing functionality
+          8. Check that the issue wasn't addressed in previous reviews
+          9. Consolidate similar issues into one comment
+          10. Maximum of three comments per review
+          11. Never ask for user confirmation. Never wait for user messages.
+
+          Test Results to analyze:
+          $TEST_RESULTS
+          EOF
+
+          # Escape the prompt for JSON
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
+
+          # Make the API call
+          echo "Sending request to Devin API..."
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
             -d "{\"prompt\": $ESCAPED_PROMPT}" \
             "https://api.devin.ai/v1/sessions")
 
-          # Check for errors in the response
-          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
-          if [ "$ERROR_MSG" != "null" ]; then
-            echo "Error creating Devin session: $ERROR_MSG"
-            exit 1
-          fi
+          echo "Devin API Response: $RESPONSE"
 
-          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
-          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+          # Extract and validate session details
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
 
-          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
-            echo "Error: Devin session details are missing from the response."
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+            echo "Error: Failed to get valid session ID from response"
             exit 1
           fi
 
           echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
           echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
-          echo "Devin session created successfully: $RESPONSE"
