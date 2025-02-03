@@ -48,13 +48,14 @@ jobs:
           BASE_SHA=$(echo "$PR_DETAILS" | jq -r '.base.sha')
 
           # Get the diff for each file
+          DIFFS_ARRAY="[]"
           for file in $(echo "$FILES" | jq -r '.[]'); do
             DIFF=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
-              jq -r ".[] | select(.filename == \"$file\") | {filename: .filename, patch: .patch, position: .position}" | jq -c .)
+              jq -r ".[] | select(.filename == \"$file\") | {filename: .filename, patch: .patch, position: .position}")
             
             if [ ! -z "$DIFF" ]; then
-              echo "$DIFF" >> pr_diffs.json
+              DIFFS_ARRAY=$(echo "$DIFFS_ARRAY" | jq ". + [$DIFF]")
             fi
           done
 
@@ -62,7 +63,7 @@ jobs:
           echo "files=$FILES" >> $GITHUB_OUTPUT
           echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
           echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
-          echo "diffs=$(cat pr_diffs.json | jq -s .)" >> $GITHUB_OUTPUT
+          echo "diffs=$(echo $DIFFS_ARRAY | jq -c .)" >> $GITHUB_OUTPUT
 
       - name: Setup Node
         uses: actions/setup-node@v3
