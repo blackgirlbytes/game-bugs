@@ -38,19 +38,22 @@ jobs:
       - name: Run Dashboard Tests
         id: test-run
         run: |
-          # Run dashboard-related tests with JSON reporter and update snapshots
-          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
+          # Store the current branch name
+          CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
           
           # Get the old snapshots for comparison
-          git checkout HEAD^ -- '**/tests/**/__snapshots__/**'
+          git checkout HEAD^ 
           mkdir -p old-snapshots
-          cp -r '**/tests/**/__snapshots__/**' old-snapshots/
-
+          cp -r tests/utils/__snapshots__ tests/components/__snapshots__ tests/logs/__snapshots__ old-snapshots/ 2>/dev/null || true
+          
           # Return to current branch
-          git checkout -
+          git checkout $CURRENT_BRANCH
+          
+          # Run dashboard-related tests with JSON reporter
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
           # Compare snapshots and save differences
-          SNAPSHOT_DIFF=$(diff -r old-snapshots '**/tests/**/__snapshots__/**' || true)
+          SNAPSHOT_DIFF=$(diff -r old-snapshots tests/ || true)
           echo "SNAPSHOT_DIFF<<EOF" >> $GITHUB_ENV
           echo "$SNAPSHOT_DIFF" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
