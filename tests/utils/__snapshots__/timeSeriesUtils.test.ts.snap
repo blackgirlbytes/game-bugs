@@ -1,0 +1,25 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`prepareTimeSeriesData time window calculations should prevent incorrect time window calculations: 24-hour-window-coverage 1`] = `
+{
+  "dataPointCount": 145,
+  "samplePoints": {
+    "end": [
+      "6:40 AM",
+      "6:50 AM",
+      "7:00 AM",
+    ],
+    "middle": [
+      "6:50 PM",
+      "7:00 PM",
+      "7:10 PM",
+    ],
+    "start": [
+      "7:00 AM",
+      "7:10 AM",
+      "7:20 AM",
+    ],
+  },
+  "uniqueHours": 12,
+}
+`;

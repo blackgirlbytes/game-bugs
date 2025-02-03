@@ -1,0 +1,188 @@
+name: Identify and Fix Dashboard Regressions
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+
+jobs:
+  review-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR files
+        id: pr-files
+        run: |
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+
+          if [ -z "$FILES" ]; then
+            echo "Error: Failed to fetch or parse PR files."
+            exit 1
+          fi
+
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+  
+      - name: Install dependencies
+        run: npm install
+  
+      - name: Run Dashboard Tests
+        id: test-run
+        run: |
+          # Run dashboard-related tests with JSON reporter
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
+          
+          # Save test results for Devin to analyze
+          TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
+          echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
+
+      - name: Create Devin Review Session
+        id: devin-review
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          
+          REVIEW_PROMPT: |
+            You are a software engineer that's excellent at finding regressions, Devin. You have a focus on detailed inline code feedback. You specialie in dashboards. Your tasks:
+            1. Clone the repository ${{ github.repository }} locally.
+            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
+            3. View the diffs of the changed files for PR #${{ github.event.pull_request.number }} in repository ${{ github.repository }}.
+            4. Review the following changed files in this PR: ${FILES_TO_REVIEW}
+            5. Run npm test to see the snapshot test results
+            6. Review the snapshot test failures:
+              - Analyzing each failed snapshot test individually
+              - Identifying what specifically changed in each snapshot
+              - Comparing the differences between expected and actual outputs
+              - Looking for patterns across multiple failures
+              - Identify regression patterns
+            7. For each failed test:
+              - Trace back through the code to find the root cause
+              - Determine if the change was intentional or a regression
+              - Identify the minimal code change needed to fix the regression
+            8. If no issues or regressions are found, simply post a comment saying "No regressions found!" and stop here. Your work is done.
+            9. Else, identify the issues or regressions and provide inline code comments directly on the diffs for any code convention or best practice violations.
+            10. Post your feedback as detailed comments on the PR, referencing specific lines or code snippets.
+
+            Rules and Guidelines:
+            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
+            2. Do not make more than three total comments on the PR.
+            3. Default towards providing inline feedback where possible with specific line references
+            4. Default towards including code snippets in markdown format when discussing issues
+            5. Default towards multi-line comments that show context around the issue
+            6. Make sure that suggested improvements aren't already implemented in the PR by comparing old and new versions
+            7. Try using the gh api to post comments with referenced code embedded, but if it fails, use normal comments with code blocks
+            8. Try using the gh api to post suggested code change that the user can commit. For example ```suggestion await fetch('https://jsonplaceholder.typicode.com/posts/1')```, but if it fails, use normal comments with code blocks
+            9. Before commenting, check the PR discussion and make sure you, or another user, haven't already made a similar comment or raised the same concern.
+            10. Refer back to these rules and guidelines before you make comments.
+            11. Never ask for user confirmation. Never wait for user messages.
+            12. You MUST run `npm test` and look at the snapshot test results.
+            13. Default towards updating code instead of updating tests.
+            14. Check for common dashboard regression categories:
+            - Data Display:
+              * Timestamp handling and formatting
+              * Number/metric formatting
+              * Data truncation issues
+              * Tooltip content and behavior
+            - Visualization:
+              * Chart/graph rendering
+              * Error distribution display
+              * Log entry layout and formatting
+            - Functionality:
+              * Filtering and sorting
+              * Log processing and transformation
+              * Error handling
+              * Data loading and updates
+            How to post comments with code embedded:
+                1. Create JSON file for each comment you want to post.
+                Example 1: 
+                    {
+                        "body": "Security Issue: Hardcoded API key. Recommendation: Use environment variables\n```suggestion\napi_key = os.environ.get('API_KEY')\n```",
+                        "commit_id": "954...12312",
+                        "path": "file.py",
+                        "line": 11,
+                        "side": "RIGHT"
+                    }
+
+                Example 2:
+                    {
+                        "body": "Multiple issues found. Here are the suggested fixes:\n```suggestion\nclass UserAccount:\n    def __init__(self, username: str, password: str):\n        \"\"\"Initialize user account.\n        \n        Args:\n            username: The user's login name\n            password: The user's password\n        \"\"\"\n        self.username = username\n        self.password = password\n```",
+                        "commit_id": "323......87686",
+                        "path": "code.py",
+                        "start_line": 11,
+                        "start_side": "RIGHT",
+                        "line": 25,
+                        "side": "RIGHT"
+                    }
+
+                body: The text of the review comment. Include markdown code blocks for snippets. Use ```suggestion blocks for code changes that can be directly applied:\n```suggestion\nfixed_code_here\n```"
+                commit_id: SHA of the commit you're reviewing. Not using the latest commit SHA may render your comment outdated if a subsequent commit modifies the line you specify as the position.
+                path: Relative file path in repo
+                line (integer): Specifies the exact line in the pull request's diff view to which your comment should attach. Required unless using subject_type:file. The line of the blob in the pull request diff that the comment applies to. For a multi-line comment, the last line of the range that your comment applies to.
+                side: In a split diff view, the side of the diff that the pull request's changes appear on. Can be LEFT or RIGHT. Use LEFT for deletions that appear in red. Use RIGHT for additions that appear in green or unchanged lines that appear in white and are shown for context. For a multi-line comment, side represents whether the last line of the comment range is a deletion or addition.
+                subject_type: The level at which the comment is targeted. Either "line" or "file". Use "line" for inline comments. Use "file" for file-level comments.
+                start_line (integer): Required when using multi-line comments unless using in_reply_to. The start_line is the first line in the pull request diff that your multi-line comment applies to.
+                start_side: Required when using multi-line comments unless using in_reply_to. The start_side is the starting side of the diff that the comment applies to. Can be LEFT or RIGHT. 
+
+                A pull request diff may not match the original file's absolute line numbering. That is, if the PR contains additions or deletions before the line you're commenting on, the line indices shown in the "Files changed" tab can shift from the original file's line numbers.
+                For example: In the pre-PR state, line 231 might refer to a completely different section of code than line 231 in the post-PR diff (because code added or removed above it shifts everything down or up).
+                Therefore, you must use the line numbers as shown in the PR diff rather than the original file's line numbers.
+
+                If you have issues, visit the docs: https://docs.github.com/en/rest/pulls/comments?apiVersion=2022-11-28#create-a-review-comment-for-a-pull-request
+
+                2. Use gh api command.
+                            gh api \\
+                --method POST \\
+                -H "Accept: application/vnd.github+json" \\
+                /repos/owner/repo/pulls/4/comments \\
+                --input comment.json
+                
+                owner: the account owner of the repository. The name is not case sensitive.
+                repo: The name of the repository without the .git extension. The name is not case sensitive.
+                pull number: The number of the pull request.
+                
+            Changed files to review:
+            ${{ steps.pr-files.outputs.files }}
+
+        run: |
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
+
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+
+          # Check for errors in the response
+          ERROR_MSG=$(echo "$RESPONSE" | jq -r '.error')
+          if [ "$ERROR_MSG" != "null" ]; then
+            echo "Error creating Devin session: $ERROR_MSG"
+            exit 1
+          fi
+
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id')
+          SESSION_URL=$(echo "$RESPONSE" | jq -r '.url')
+
+          if [ -z "$SESSION_ID" ] || [ -z "$SESSION_URL" ]; then
+            echo "Error: Devin session details are missing from the response."
+            exit 1
+          fi
+
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+          echo "session-url=$SESSION_URL" >> $GITHUB_OUTPUT
+          echo "Devin session created successfully: $RESPONSE"
