@@ -1,0 +1,75 @@
+name: Apply Devin's Fix
+
+on:
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply-fix:
+    if: contains(github.event.comment.reactions, 'heart')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Create Devin Fix Session
+        id: devin-fix
+        env:
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          # Read the prompt from file and replace environment variables
+          PROMPT=$(cat .github/dashboard-fix-prompt.md | envsubst)
+          
+          # Convert multiline string to JSON-safe format
+          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -Rs .)
+
+          # Make the API call to Devin
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer $DEVIN_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            "https://api.devin.ai/v1/sessions")
+
+          # Extract session details
+          SESSION_ID=$(echo "$RESPONSE" | jq -r '.session_id // empty')
+          if [ -z "$SESSION_ID" ] || [ "$SESSION_ID" = "null" ]; then
+            echo "Error: Failed to get valid session ID from response"
+            echo "Response was: $RESPONSE"
+            exit 1
+          fi
+
+          echo "session-id=$SESSION_ID" >> $GITHUB_OUTPUT
+
+      - name: Run Tests After Fix
+        run: npm test
+
+      - name: Push Changes
+        run: |
+          git config --global user.name 'Devin AI'
+          git config --global user.email 'devin-ai@example.com'
+          git add .
+          git commit -m "fix: Apply regression fix suggested by Devin
+
+          Applied fix based on approved suggestion in PR comment ${{ github.event.comment.html_url }}"
+          git push
