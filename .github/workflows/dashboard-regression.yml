@@ -38,9 +38,23 @@ jobs:
       - name: Run Dashboard Tests
         id: test-run
         run: |
-          # Run dashboard-related tests with JSON reporter
+          # Run dashboard-related tests with JSON reporter and update snapshots
           npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
+          # Get the old snapshots for comparison
+          git checkout HEAD^ -- '**/tests/**/__snapshots__/**'
+          mkdir -p old-snapshots
+          cp -r '**/tests/**/__snapshots__/**' old-snapshots/
+
+          # Return to current branch
+          git checkout -
+          
+          # Compare snapshots and save differences
+          SNAPSHOT_DIFF=$(diff -r old-snapshots '**/tests/**/__snapshots__/**' || true)
+          echo "SNAPSHOT_DIFF<<EOF" >> $GITHUB_ENV
+          echo "$SNAPSHOT_DIFF" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
           # Save test results for Devin to analyze
           TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
           echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
@@ -52,76 +66,57 @@ jobs:
           TEST_RESULTS: ${{ steps.test-run.outputs.results }}
           
           REVIEW_PROMPT: |
-            You are Dashboard Regression Analyzer Devin with a focus on detailed inline code feedback. Your tasks:
-            1. Clone the repository ${{ github.repository }} locally.
-            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
-            3. Review the test failures in the dashboard test results:
-               - Analyze failed assertions and snapshots
-               - Compare expected vs actual outputs
-               - Identify regression patterns
-            4. Check the PR changes that caused these test failures
-            5. Read the PR discussion to see what previous comments have been made
-            6. For each identified regression:
-               - Locate the exact line causing the issue
-               - Provide inline code comments with suggestions
-               - Explain the regression's impact on dashboard functionality
+            You are Dashboard Regression Analyzer Devin. Your task is to analyze potential regressions in the game logging dashboard. This dashboard shows events across multiple games (Tetris, Dominoes, Checkers, Snake).
 
-            Rules and Guidelines:
-            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
-            2. Do not make more than three total comments on the PR.
-            3. Use inline feedback where possible with specific line references
-            4. For any suggested code changes, use GitHub's suggestion format:
+            Analysis Steps:
+            1. Clone the repository and prevent any pushes using a pre-push hook for safety.
+            
+            2. Analyze the test results JSON for failures, focusing on:
+               - Failed assertions
+               - Snapshot mismatches
+               - Test error messages
+            
+            3. For snapshot failures:
+               a. Review the snapshot differences provided in ${{ env.SNAPSHOT_DIFF }}
+               b. Identify patterns in the differences (e.g., data formatting, layout changes)
+               c. Look at the PR changes that caused these differences
+               d. Determine if changes are intentional improvements or actual regressions
+            
+            4. Check for common dashboard regression categories:
+               - Data Display:
+                 * Timestamp handling and formatting
+                 * Number/metric formatting
+                 * Data truncation issues
+                 * Tooltip content and behavior
+               - Visualization:
+                 * Chart/graph rendering
+                 * Error distribution display
+                 * Log entry layout and formatting
+               - Functionality:
+                 * Filtering and sorting
+                 * Log processing and transformation
+                 * Error handling
+                 * Data loading and updates
+            
+            5. For each identified regression:
+               a. Locate the exact component and line causing the issue
+               b. Analyze the surrounding context and related changes
+               c. Propose a fix that matches existing patterns in the codebase
+               d. Explain the regression's impact on dashboard functionality
+            
+            Rules:
+            1. Never commit or push changes - only review and comment
+            2. Limit to three significant comments per PR
+            3. Use inline comments with specific line references
+            4. Include code snippets in markdown format
+            5. For suggestions, use GitHub's suggestion format:
                ```suggestion
                your suggested code here
                ```
-            5. When suggesting changes, always include:
-               - A clear description of the regression/issue
-               - The suggestion block with the corrected code
-               - A recommendation explaining why the change is needed
-            6. Default towards multi-line comments that show context around the issue
-            7. Make sure that suggested improvements aren't already implemented in the PR
-            8. Try using the gh api to post comments with referenced code embedded
-            9. Before commenting, check the PR discussion to avoid duplicate comments
-            10. If you see the same issue multiple times, consolidate your feedback
-            11. Never ask for user confirmation. Never wait for user messages.
-            
-            How to post comments with code embedded:
-            1. Create JSON file for each comment you want to post.
-            Example 1: 
-                {
-                    "body": "Regression Issue: Timezone change breaks existing snapshots.\n\n```suggestion\n      timeZone: 'America/New_York'\n```\n\nRecommendation: Maintain EST timezone as it matches test expectations and local development environment.",
-                    "commit_id": "954...12312",
-                    "path": "src/components/logs/LogEntry.tsx",
-                    "line": 11,
-                    "side": "RIGHT"
-                }
-
-            Example 2:
-            {
-                "body": "Multiple regression issues found:\n\n```suggestion\n      timeZone: 'America/New_York'\n```\n\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by timezone conversion\n\nRecommendation: Maintain EST timezone for consistency with test suite and development environment.",
-                "commit_id": "323......87686",
-                "path": "src/components/logs/LogEntry.tsx",
-                "start_line": 11,
-                "start_side": "RIGHT",
-                "line": 25,
-                "side": "RIGHT"
-            }
-
-            body: The text of the review comment. Include markdown code blocks for snippets
-            commit_id: SHA of the commit you're reviewing
-            path: Relative file path in repo
-            line (integer): Line number in the PR diff for the comment
-            side: Can be LEFT or RIGHT. Use LEFT for deletions, RIGHT for additions
-            subject_type: Either "line" or "file"
-            start_line (integer): First line for multi-line comments
-            start_side: Starting side for multi-line comments (LEFT or RIGHT)
-
-            2. Use gh api command:
-                        gh api \\
-            --method POST \\
-            -H "Accept: application/vnd.github+json" \\
-            /repos/owner/repo/pulls/number/comments \\
-            --input comment.json
+            6. Always explain why a change is needed and its impact
+            7. Check for duplicate comments before posting
+            8. Consolidate similar issues into one comprehensive comment
+            9. Work autonomously without asking for confirmation
 
             Test Results to analyze:
             ${{ steps.test-run.outputs.results }}
