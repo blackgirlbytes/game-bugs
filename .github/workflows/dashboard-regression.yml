@@ -50,91 +50,81 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           TEST_RESULTS: ${{ steps.test-run.outputs.results }}
-        run: |
-          # Create the prompt
-          read -r -d '' PROMPT << 'EOT'
-          You are Dashboard Regression Analyzer Devin with a focus on detailed inline code feedback. Your tasks:
-          1. Clone the repository ${{ github.repository }} locally.
-          2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
-          3. Review the test failures in the dashboard test results:
-             - Analyze failed assertions and snapshots
-             - Compare expected vs actual outputs
-             - Identify regression patterns
-          4. Check the PR changes that caused these test failures
-          5. Read the PR discussion to see what previous comments have been made
-          6. For each identified regression:
-             - Locate the exact line causing the issue
-             - Provide inline code comments with suggestions
-             - Explain the regression's impact on dashboard functionality
-
-          Rules and Guidelines:
-          1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
-          2. Do not make more than three total comments on the PR.
-          3. Use inline feedback where possible with specific line references
-          4. Include code snippets in markdown format when discussing issues
-          5. Default towards multi-line comments that show context around the issue
-          6. Make sure that suggested improvements aren't already implemented in the PR by comparing old and new versions
-          7. Try using the gh api to post comments with referenced code embedded
-          8. Before commenting, check the PR discussion and make sure you haven't already made a similar comment
-          9. Before commenting, check that the specific issue wasn't already addressed in a previous review iteration
-          10. If you see the same issue multiple times, consolidate your feedback into a single comment
-          11. Never ask for user confirmation. Never wait for user messages.
           
-          How to post comments with code embedded:
-          1. Create JSON file for each comment you want to post.
-          Example 1: 
-              {
-                  "body": "Regression Issue: Timezone change from America/New_York to UTC breaks existing snapshots. Recommendation: Maintain consistent timezone handling",
-                  "commit_id": "954...12312",
-                  "path": "src/components/logs/LogEntry.tsx",
-                  "line": 11,
-                  "side": "RIGHT"
-              }
+          REVIEW_PROMPT: |
+            You are Dashboard Regression Analyzer Devin with a focus on detailed inline code feedback. Your tasks:
+            1. Clone the repository ${{ github.repository }} locally.
+            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
+            3. Review the test failures in the dashboard test results:
+               - Analyze failed assertions and snapshots
+               - Compare expected vs actual outputs
+               - Identify regression patterns
+            4. Check the PR changes that caused these test failures
+            5. Read the PR discussion to see what previous comments have been made
+            6. For each identified regression:
+               - Locate the exact line causing the issue
+               - Provide inline code comments with suggestions
+               - Explain the regression's impact on dashboard functionality
 
-          Example 2:
-          {
-              "body": "Multiple regression issues found:\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by UTC conversion",
-              "commit_id": "323......87686",
-              "path": "src/components/logs/LogEntry.tsx",
-              "start_line": 11,
-              "start_side": "RIGHT",
-              "line": 25,
-              "side": "RIGHT"
-          }
+            Rules and Guidelines:
+            1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
+            2. Do not make more than three total comments on the PR.
+            3. Use inline feedback where possible with specific line references
+            4. Include code snippets in markdown format when discussing issues
+            5. Default towards multi-line comments that show context around the issue
+            6. Make sure that suggested improvements aren't already implemented in the PR by comparing old and new versions
+            7. Try using the gh api to post comments with referenced code embedded
+            8. Before commenting, check the PR discussion and make sure you haven't already made a similar comment
+            9. Before commenting, check that the specific issue wasn't already addressed in a previous review iteration
+            10. If you see the same issue multiple times, consolidate your feedback into a single comment
+            11. Never ask for user confirmation. Never wait for user messages.
+            
+            How to post comments with code embedded:
+            1. Create JSON file for each comment you want to post.
+            Example 1: 
+                {
+                    "body": "Regression Issue: Timezone change from America/New_York to UTC breaks existing snapshots. Recommendation: Maintain consistent timezone handling",
+                    "commit_id": "954...12312",
+                    "path": "src/components/logs/LogEntry.tsx",
+                    "line": 11,
+                    "side": "RIGHT"
+                }
 
-          body: The text of the review comment. Include markdown code blocks for snippets
-          commit_id: SHA of the commit you're reviewing
-          path: Relative file path in repo
-          line (integer): Line number in the PR diff for the comment
-          side: Can be LEFT or RIGHT. Use LEFT for deletions, RIGHT for additions
-          subject_type: Either "line" or "file"
-          start_line (integer): First line for multi-line comments
-          start_side: Starting side for multi-line comments (LEFT or RIGHT)
+            Example 2:
+            {
+                "body": "Multiple regression issues found:\n1. Timezone change affects all timestamp displays\n2. Snapshot tests failing due to timezone mismatch\n3. Log entry formatting affected by UTC conversion",
+                "commit_id": "323......87686",
+                "path": "src/components/logs/LogEntry.tsx",
+                "start_line": 11,
+                "start_side": "RIGHT",
+                "line": 25,
+                "side": "RIGHT"
+            }
 
-          2. Use gh api command:
-                      gh api \\
-          --method POST \\
-          -H "Accept: application/vnd.github+json" \\
-          /repos/owner/repo/pulls/number/comments \\
-          --input comment.json
+            body: The text of the review comment. Include markdown code blocks for snippets
+            commit_id: SHA of the commit you're reviewing
+            path: Relative file path in repo
+            line (integer): Line number in the PR diff for the comment
+            side: Can be LEFT or RIGHT. Use LEFT for deletions, RIGHT for additions
+            subject_type: Either "line" or "file"
+            start_line (integer): First line for multi-line comments
+            start_side: Starting side for multi-line comments (LEFT or RIGHT)
 
-          Test Results to analyze:
-          $TEST_RESULTS
-          EOT
+            2. Use gh api command:
+                        gh api \\
+            --method POST \\
+            -H "Accept: application/vnd.github+json" \\
+            /repos/owner/repo/pulls/number/comments \\
+            --input comment.json
 
-          # Escape the prompt for JSON
-          ESCAPED_PROMPT=$(echo "$PROMPT" | jq -R -s .)
-
-          # Debug output
-          echo "Sending request to Devin API..."
-          echo "First 500 chars of escaped prompt:"
-          echo "$ESCAPED_PROMPT" | head -c 500
-
-          # Make the API call
+            Test Results to analyze:
+            ${{ steps.test-run.outputs.results }}
+        run: |
+          # Make the API call to Devin
           RESPONSE=$(curl -s -X POST \
             -H "Authorization: Bearer $DEVIN_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"prompt\": $ESCAPED_PROMPT}" \
+            -d "{\"prompt\": \"$REVIEW_PROMPT\"}" \
             "https://api.devin.ai/v1/sessions")
 
           # Debug: Print the raw response
