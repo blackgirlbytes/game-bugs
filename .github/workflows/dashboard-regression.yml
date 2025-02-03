@@ -27,6 +27,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Get PR files and diff
+        id: pr-files
+        run: |
+          # Get PR files
+          FILES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+            jq -r '[.[].filename] | @json')
+
+          if [ -z "$FILES" ]; then
+            echo "Error: Failed to fetch or parse PR files."
+            exit 1
+          fi
+
+          # Get PR details including latest commit
+          PR_DETAILS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}")
+          
+          HEAD_SHA=$(echo "$PR_DETAILS" | jq -r '.head.sha')
+          BASE_SHA=$(echo "$PR_DETAILS" | jq -r '.base.sha')
+
+          # Get the diff for each file
+          for file in $(echo "$FILES" | jq -r '.[]'); do
+            DIFF=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" | \
+              jq -r ".[] | select(.filename == \"$file\") | {filename: .filename, patch: .patch, position: .position}" | jq -c .)
+            
+            if [ ! -z "$DIFF" ]; then
+              echo "$DIFF" >> pr_diffs.json
+            fi
+          done
+
+          # Store outputs
+          echo "files=$FILES" >> $GITHUB_OUTPUT
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "base_sha=$BASE_SHA" >> $GITHUB_OUTPUT
+          echo "diffs=$(cat pr_diffs.json | jq -s .)" >> $GITHUB_OUTPUT
+
       - name: Setup Node
         uses: actions/setup-node@v3
         with:
@@ -38,21 +75,9 @@ jobs:
       - name: Run Dashboard Tests
         id: test-run
         run: |
-          # Run tests WITHOUT updating snapshots to catch mismatches
+          # Run dashboard-related tests with JSON reporter
           npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
           
-          # If there are snapshot failures, run again with --updateSnapshot to see the differences
-          if grep -q "snapshot" test-results.json; then
-            echo "Snapshot failures detected. Analyzing differences..."
-            # Run update snapshot in dry-run mode to see what would change
-            npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' -u --dry-run > snapshot-diff.txt 2>&1 || true
-            
-            # Save the snapshot differences
-            echo "SNAPSHOT_DIFF<<EOF" >> $GITHUB_ENV
-            cat snapshot-diff.txt >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
-          fi
-
           # Save test results for Devin to analyze
           TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
           echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
@@ -62,59 +87,120 @@ jobs:
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           TEST_RESULTS: ${{ steps.test-run.outputs.results }}
+          FILES_TO_REVIEW: ${{ steps.pr-files.outputs.files }}
+          HEAD_SHA: ${{ steps.pr-files.outputs.head_sha }}
+          BASE_SHA: ${{ steps.pr-files.outputs.base_sha }}
+          DIFFS: ${{ steps.pr-files.outputs.diffs }}
           
           REVIEW_PROMPT: |
-            You are a Software Engineer analyzing dashboard regressions. Your primary task is to review dashboard regressions and suggest fixes as direct PR comments.
-            
-            CRITICAL RULES:
-            1. ALWAYS use GitHub's suggestion syntax for fixes:
+            You are Dashboard Regression Analyzer Devin with a focus on detailed inline code feedback. Your tasks:
+            1. Clone the repository ${{ github.repository }} locally.
+            2. Next, set up a pre-push Git hook that prevents any pushes from a user with the username "Devin AI" OR an email containing "devin-ai-integration" as a substring. Activate the hook.
+            3. Review the following changed files in this PR:
+                ${{ steps.pr-files.outputs.files }}
+            4. Review the test failures in the dashboard test results:
+                - Analyzing each failed snapshot test individually
+                - Identifying what specifically changed in each snapshot
+                - Comparing the differences between expected and actual outputs
+                - Looking for patterns across multiple failures
+                - Identify regression patterns
+            4. For each failed test:
+                - Trace back through the code to find the root cause
+                - Determine if the change was intentional or a regression
+                - Identify the minimal code change needed to fix the regression
+            5. Generate specific suggestions that:
+                - Match the exact formatting of the failed test
+                - Consider the surrounding code context
+                - Maintain consistency with the codebase style
+                - Fix the regression without introducing new issues
+            6. For each identified regression:
+                - Locate the exact line causing the issue
+                - Provide inline code comments with suggestions
+                - Explain the regression's impact on dashboard functionality
 
-              ```suggestion
-              [your fixed code here]
-              ```
+            Rules and Guidelines: |
+                1. NEVER make any commits or pushes to the repository - you are ONLY allowed to review code and leave comments
+                2. Do not make more than three total comments on the PR
+                3. For each suggestion:
+                    - First state what the test expected vs what it received
+                    - Show the exact line(s) that caused the regression
+                    - Explain why the current code causes the test to fail
+                    - Provide a minimal, specific code fix
+                4. Format suggestions using: |
+                    ```suggestion
+                    [your specific code fix here]
+                    ```
+                5. Each comment must include:
+                    - The specific test name that failed
+                    - The exact difference that caused the failure
+                    - A clear explanation of why the suggestion fixes it
+                6. Avoid generic suggestions - every fix should be based on actual test output
+                7. Make sure that suggested improvements aren't already implemented in the PR
+                8. Try using the gh api to post comments with referenced code embedded
+                9. Never use placeholder examples - all suggestions must be based on actual code
+                10. Never ask for user confirmation. Never wait for user messages.
+                11.  Check for common dashboard regression categories:
+                    - Data Display:
+                      * Timestamp handling and formatting
+                      * Number/metric formatting
+                      * Data truncation issues
+                      * Tooltip content and behavior
+                    - Visualization:
+                      * Chart/graph rendering
+                      * Error distribution display
+                      * Log entry layout and formatting
+                    - Functionality:
+                      * Filtering and sorting
+                      * Log processing and transformation
+                      * Error handling
+                      * Data loading and updates
 
-            2. Place suggestions on the EXACT line number where the fix should be applied
-            3. NEVER create new PRs or branches
-            4. NEVER commit or push changes
+            How to post comments with code embedded: |
+                1. Create JSON file for each comment you want to post.
+                Example 1: |
+                    {
+                        "body": "Regression Issue: [describe the specific test failure]\n\n```suggestion\n      [corrected code that fixes the failing test]\n```\n\nRecommendation: [explain why this change fixes the regression]",
+                        "commit_id": "${{ steps.pr-files.outputs.head_sha }}",
+                        "path": "src/components/example/Component.tsx",
+                        "position": 1,
+                        "subject_type": "line",
+                        "side": "RIGHT"
+                    }
 
-            Analysis Steps:
-            1. Clone the repository and prevent any pushes using a pre-push hook for safety.
-            
-            2.  Review test results JSON for failures:
-               - Failed assertions
-               - Snapshot mismatches
-               - Test error messages
+                Example 2: |
+                    {
+                        "body": "Multiple regression issues found:\n\n```suggestion\n      [corrected code that addresses multiple issues]\n```\n\n1. [First regression impact]\n2. [Second regression impact]\n3. [Third regression impact]\n\nRecommendation: [explain why these changes fix the regressions]",
+                        "commit_id": "${{ steps.pr-files.outputs.head_sha }}",
+                        "path": "src/components/example/Component.tsx",
+                        "position": 1,
+                        "subject_type": "line",
+                        "side": "RIGHT"
+                    }
 
-            3. For each regression found:
-                - Identify the exact line causing the issue
-                - Identify patterns in the differences (e.g., data formatting, layout changes)
-                - Create a suggestion comment on that specific line with
-                  * The fix using suggestion syntax
-                  * Brief explanation of why the change is needed
-                  * How it relates to the test failure
+                Note: The position parameter is a number indicating the position in the diff where you want to add the comment.
+                You can find this by looking at the line numbers in pr_diffs.txt.
 
-            
-            4. Check for common dashboard regression categories:
-               - Data Display:
-                 * Timestamp handling and formatting
-                 * Number/metric formatting
-                 * Data truncation issues
-                 * Tooltip content and behavior
-               - Visualization:
-                 * Chart/graph rendering
-                 * Error distribution display
-                 * Log entry layout and formatting
-               - Functionality:
-                 * Filtering and sorting
-                 * Log processing and transformation
-                 * Error handling
-                 * Data loading and updates
+                2. Use gh api command with review creation: |
+                    # First create a review
+                    REVIEW_ID=$(gh api \
+                    --method POST \
+                    -H "Accept: application/vnd.github+json" \
+                    /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews \
+                    -f event='COMMENT' \
+                    | jq -r '.id')
 
-            Test Results to analyze:
-            ${{ steps.test-run.outputs.results }}
+                    # Then add the comment to the review
+                    gh api \
+                    --method POST \
+                    -H "Accept: application/vnd.github+json" \
+                    /repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews/$REVIEW_ID/comments \
+                    --input comment.json
 
-            Snapshot Differences (if any):
-            ${{ env.SNAPSHOT_DIFF }}
+            Changed files to review:
+            ${{ steps.pr-files.outputs.files }}
+
+            Test Results to analyze: |
+                ${{ steps.test-run.outputs.results }}
         run: |
           # Convert multiline string to JSON-safe format
           ESCAPED_PROMPT=$(echo "$REVIEW_PROMPT" | jq -Rs .)
