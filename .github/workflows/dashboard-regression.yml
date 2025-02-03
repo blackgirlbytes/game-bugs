@@ -46,8 +46,7 @@ jobs:
         if: steps.test-run.outcome == 'failure'
         run: |
           # Read and format test results for Devin
-          TEST_RESULTS=$(cat dashboard-test-results.json | jq -c .)
-          echo "results=$TEST_RESULTS" >> $GITHUB_OUTPUT
+          TEST_RESULTS=$(cat dashboard-test-results.json | jq -c . | jq -sR)
 
       - name: Create Devin Review Session
         if: steps.test-run.outcome == 'failure'
@@ -109,8 +108,8 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"prompt\": $ESCAPED_PROMPT,
+              \"test_results\": $TEST_RESULTS,
               \"files\": {
-                \"test-results\": \"$TEST_RESULTS\",
                 \"dashboard\": \"./src/components/LogDashboard.tsx\",
                 \"log-entry\": \"./src/components/logs/LogEntry.tsx\",
                 \"log-utils\": \"./src/utils/logUtils.ts\"
