@@ -45,7 +45,7 @@ jobs:
         id: test-run
         run: |
           # Run dashboard-related tests with JSON reporter
-          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils)' --json --outputFile=test-results.json || true
+          npm test -- --testPathPattern='(LogDashboard|LogEntry|ErrorDistribution|logUtils|timeSeriesUtils)' --json --outputFile=test-results.json || true
           
           # Save test results for Devin to analyze
           TEST_RESULTS=$(cat test-results.json | jq -c . | jq -R .)
